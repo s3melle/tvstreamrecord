@@ -308,3 +308,19 @@ div#users-contain table th { font-weight: bold; }
 #mainmenu {
     font-family: Arial, Helvetica, sans-serif;
 }
+
+/* EPG list: resizable columns */
+#table_epglist_wrapper { overflow-x: auto; }
+#table_epglist { min-width: 100%; width: max-content; table-layout: fixed; }
+#table_epglist th { position: relative; }
+#table_epglist .epg-column-resizer {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 7px;
+    height: 100%;
+    cursor: col-resize;
+    user-select: none;
+    z-index: 2;
+}
+#table_epglist .epg-column-resizer:hover { background: rgba(100, 100, 100, 0.25); }
