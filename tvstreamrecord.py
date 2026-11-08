@@ -890,7 +890,7 @@ def epg_s(keyword=''):
             except:
                 pass
             keyword = keyword.replace('%20',' ')
-    return internationalize(template('epgchart', keyword_for_epg=keyword, curr=datetime.strftime(dayshown, "%Y-%m-%d"), rowss=ret, zoom=config.cfg_grab_zoom, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group))
+    return internationalize(template('epgchart', keyword_for_epg=keyword, curr=datetime.strftime(dayshown, "%Y-%m-%d"), rowss=ret, zoom=config.cfg_grab_zoom, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group, chart_start_hour=sthour, chart_total_width=totalwidth, chart_today=1 if dayshown == datetime.combine(date.today(), time.min) else 0))
 
 @route('/epglist')
 @route('/epglist&<keyword>')
