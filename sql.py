@@ -63,6 +63,7 @@ def sqlDropAll():
     sql  = 'DROP TABLE IF EXISTS channels;'
     sql += 'DROP TABLE IF EXISTS records;'
     sql += 'DROP TABLE IF EXISTS guide_chan;'
+    sql += 'DROP TABLE IF EXISTS channel_groups;'
     sql += 'DROP TABLE IF EXISTS guide;'
     sql += 'DROP TABLE IF EXISTS caching;'
     sql += 'DROP TABLE IF EXISTS config;'
