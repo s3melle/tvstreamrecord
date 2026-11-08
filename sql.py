@@ -150,6 +150,7 @@ def sqlCreateAll(version):
 
                 sql += "INSERT OR REPLACE INTO config VALUES ('cfg_version', 'Program version', '%s');" % version
                 print ("New version %s was implemented" % version)
+    sql += "CREATE TABLE IF NOT EXISTS channel_groups (cid INTEGER PRIMARY KEY, group_name TEXT NOT NULL);"
     if sql:
         sqlRun(sql, -1, 1)
     return
