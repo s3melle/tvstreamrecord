@@ -1201,7 +1201,7 @@ $(function() {
         });
         
         $("#epg_group_filter").on("change", function() {
-            $("#table_epglist").dataTable().fnDraw();
+            window.location.href = "/epglist" + (this.value ? "?group=" + encodeURIComponent(this.value) : "");
         });
         initIcons();
         initEpgState();
