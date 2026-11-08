@@ -794,7 +794,7 @@ def epg_s(keyword=''):
     if dayshown < datetime.combine(date.today(), time.min):
         dayshown = datetime.combine(date.today(), time.min)
 
-    selected_group = request.query.get("group", "")
+    selected_group = request.query.group
     todaysql = datetime.strftime(dayshown, "%Y-%m-%d %H:%M:%S")
     weekbit = pow(2, int(datetime.strftime(dayshown, "%w")))
     # For handling overnight recurrent records from yesterday
@@ -919,7 +919,7 @@ def epglist_getter():
             if 0 <= col < len(columns) and columns[col]:
                 direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
                 sOrder = "ORDER BY %s %s" % (columns[col], direction)
-        selected_group = request.query.get("group", "")
+        selected_group = request.query.group
         group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
         group_params = (selected_group,) if selected_group else ()
         iSearch = request.query.sSearch
@@ -935,7 +935,7 @@ def epglist_getter():
 
         rows=sqlRun(query, group_params)
     else: # Client-side processing
-        selected_group = request.query.get("group", "")
+        selected_group = request.query.group
         group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
         group_params = (selected_group,) if selected_group else ()
         rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0" + group_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), group_params)
