@@ -797,7 +797,7 @@ def epg_s(keyword=''):
         t = time(i+sthour)
         x = i * 100.0 / hours * widthq
         w =  1.0 / hours * widthq * 100.0
-        rtemp.append([-1, x, w, t.strftime("%H:%M"), "", "", "", -1, "", -1])
+        rtemp.append([-1, x, w, t.strftime("%H:%M"), "", "", "", -1, "", -1, "", ""])
     ret.append(rtemp)
 
     rows=sqlRun("SELECT guide.g_id, channels.cid, channels.cname FROM guide, guide_chan, channels WHERE channels.cenabled=1 AND channels.cname=guide_chan.g_name AND guide.g_id=guide_chan.g_id AND (date(g_start)=date(?) OR date(g_stop)=date(?)) GROUP BY channels.cid ORDER BY channels.cid", (todaysql, todaysql))
@@ -880,14 +880,15 @@ def epglist_getter():
     retlist = []
     totalrows = 0
     if sEcho: # Server-side processing
-        columns = ['guide_chan.g_name', 'guide.g_title', 'guide.g_desc', 'guide.g_start', 'guide.g_stop']
+        columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
         sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
         iSortingCols = int(request.query.iSortingCols)
         sOrder = ""
         if iSortingCols:
             sOrder = "ORDER BY"
             col = int(request.query['iSortCol_0'])
-            sOrder += " %s " % columns[col]
+            if 0 <= col < len(columns) and columns[col]:
+                sOrder += " %s " % columns[col]
             sOrder += "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
             if sOrder == "ORDER BY":
                 sOrder = ""
@@ -907,7 +908,15 @@ def epglist_getter():
         rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events))
 
     for row in rows:
-        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
+        rating_score = None
+        if row[10]:
+            rating_match = re.search(r'(\d+(?:[.,]\d+)?)', str(row[10]))
+            if rating_match:
+                try:
+                    rating_score = float(rating_match.group(1).replace(',', '.'))
+                except ValueError:
+                    pass
+        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
 
     return json.dumps(
                       {"aaData": retlist,
