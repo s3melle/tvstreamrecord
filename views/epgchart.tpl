@@ -47,10 +47,11 @@
         %end
 </div>
         %if cnt==0:
-<div id="dividegroup">
+<div id="dividegroup" start-hour="{{chart_start_hour}}" total-width="{{chart_total_width}}" today="{{chart_today}}">
             %for row in rows:
     <div id="divider" x="{{row[1]}}" width="{{row[2]}}"></div>
             %end
+    <div id="epg_current_time"></div>
 </div>
         %end
 
