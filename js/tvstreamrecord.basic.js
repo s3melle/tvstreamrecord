@@ -986,6 +986,10 @@ $(function() {
         });
         $( "#datepicker_epg" ).val( localDate( $( "#datepicker_epg" ).attr("dbvalue") ) );
 
+        $("#epg_group_filter").on("change", function() {
+            window.location.href = "/epgchart" + (this.value ? "?group=" + encodeURIComponent(this.value) : "");
+        });
+
         $( "[id^=event], [id=divider]" ).each(function(i) {
             w = +$(this).attr('width');
             x = +$(this).attr('x');
@@ -1149,6 +1153,9 @@ $(function() {
             "bProcessing": true,
             "bAutoWidth": false,
             "sAjaxSource": "/epglist_getter",
+            "fnServerParams": function(aoData) {
+                aoData.push({"name": "group", "value": $("#epg_group_filter").val() || ""});
+            },
             "fnDrawCallback": function( oSettings ) {
                 initIcons();
                 paintTable();
@@ -1193,6 +1200,9 @@ $(function() {
             }
         });
         
+        $("#epg_group_filter").on("change", function() {
+            $("#table_epglist").dataTable().fnDraw();
+        });
         initIcons();
         initEpgState();
 
