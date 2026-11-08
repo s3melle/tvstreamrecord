@@ -1064,6 +1064,42 @@ $(function() {
             }
         }
 
+        // Current-time marker on the EPG chart (only when displaying today).
+        var currentTimeMarker = $("#epg_current_time");
+        var chartGrid = $("#dividegroup");
+        if (currentTimeMarker.length && chartGrid.attr("today") === "1") {
+            var chartStartHour = parseInt(chartGrid.attr("start-hour"), 10);
+            var chartTotalWidth = parseFloat(chartGrid.attr("total-width"));
+            function updateEpgCurrentTime() {
+                var now = new Date();
+                var elapsed = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds() - chartStartHour * 3600;
+                var ratio = elapsed / chartTotalWidth;
+                if (ratio < 0 || ratio > 1 || !isFinite(ratio)) {
+                    currentTimeMarker.hide();
+                    return;
+                }
+                currentTimeMarker.show();
+                if (zoom > 0) {
+                    currentTimeMarker.css({
+                        left: (ratio * 100) + "%",
+                        top: "30px",
+                        width: "2px",
+                        height: (maxcnt * 100) + "px"
+                    });
+                } else {
+                    currentTimeMarker.css({
+                        left: "0px",
+                        top: (ratio * 100) + "%",
+                        width: chartGrid.width() + "px",
+                        height: "2px"
+                    });
+                }
+            }
+            updateEpgCurrentTime();
+            setInterval(updateEpgCurrentTime, 30000);
+            $(window).on("resize", updateEpgCurrentTime);
+        }
+
         $( "#searchepg" ).change(function(param) {
             var tofind = $(this).val().toLowerCase().trim();
             if(!param.hasOwnProperty("isTrigger")) {
