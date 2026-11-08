@@ -12,6 +12,7 @@
         <tr class="ui-widget-header">
             <th class="echan">§Channel§</th>
             <th class="etit">§Title§</th>
+            <th class="erating">IMDb</th>
             <th class="edesc">§Description§</th>
             <th class="estart">§Start time§</th>
             <th class="estop">§End time§</th>
