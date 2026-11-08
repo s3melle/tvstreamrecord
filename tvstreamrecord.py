@@ -420,6 +420,7 @@ def createchannel():
         if exists:
             sqlRun("UPDATE channels SET cid = cid+1 WHERE cid >= ?", (cid, ))
             sqlRun("UPDATE records SET cid = cid+1 WHERE cid >= ?", (cid, ))
+            sqlRun("UPDATE channel_groups SET cid = cid+1 WHERE cid >= ?", (cid, ))
         sqlRun("INSERT INTO channels VALUES (?, ?, ?, ?, ?, ?)", (cname, cpath, aktiv, cext, cid, epggrab))
     return "null"
 
