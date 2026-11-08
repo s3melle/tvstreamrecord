@@ -885,13 +885,10 @@ def epglist_getter():
         iSortingCols = int(request.query.iSortingCols)
         sOrder = ""
         if iSortingCols:
-            sOrder = "ORDER BY"
             col = int(request.query['iSortCol_0'])
             if 0 <= col < len(columns) and columns[col]:
-                sOrder += " %s " % columns[col]
-            sOrder += "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
-            if sOrder == "ORDER BY":
-                sOrder = ""
+                direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
+                sOrder = "ORDER BY %s %s" % (columns[col], direction)
         iSearch = request.query.sSearch
         sWhere = ""
         if iSearch and iSearch!="":
