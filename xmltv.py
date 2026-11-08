@@ -19,7 +19,37 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 from datetime import datetime, timedelta
+import re
 from time import sleep
+
+
+def parse_xmltv_datetime(value):
+    value = value.strip()
+    date_part = value[:14]
+    timezone_part = value[14:].strip()
+    if timezone_part:
+        dt = datetime.strptime(date_part + " " + timezone_part, "%Y%m%d%H%M%S %z")
+        return dt.astimezone().replace(tzinfo=None)
+    return datetime.strptime(date_part, "%Y%m%d%H%M%S")
+
+
+def getProgrammeIcon(programme_text):
+    match = re.search(r"<icon[^>]*src=[\"']([^\"']+)[\"']", programme_text, re.I)
+    return match.group(1).strip() if match else ""
+
+
+def getProgrammeRating(programme_text):
+    fallback = ""
+    for rating_attr, rating_text in getList(programme_text, 'rating'):
+        value = getFirst(rating_text, 'value').strip()
+        if not value:
+            continue
+        system = getAttr(rating_attr, 'system').lower()
+        if 'imdb' in system:
+            return value
+        if not fallback:
+            fallback = value
+    return fallback
 try:
     import httplib
     import urllib2 as urllib32
@@ -88,8 +118,15 @@ def checkType(typ):
     else:
         return 0
 
-def getProgList(ver=''):
+def getProgList(ver='', progress_callback=None):
     print ("tvstreamrecord v.%s / XMLTV import started" % ver)
+
+    progress_state = [0, 0]
+    def update_progress(done_delta, total_delta):
+        progress_state[0] += done_delta
+        progress_state[1] += total_delta
+        if progress_callback:
+            progress_callback(progress_state[0], progress_state[1])
 
     keylist = []
     if config.cfg_epg_autorecord.strip() != "":
@@ -142,7 +179,7 @@ def getProgList(ver=''):
                         dt = datetime.strptime(getAttr(t_attr, "lastmodified")[0:14],"%Y%m%d%H%M%S")
                         if dt>lastdate and dtepg>=datetime.now()-timedelta(days=1):
                             source = url+g_id+"_"+dttext+".xml.gz"
-                            entries,rec = getProg(getFile(source,0,ver),[],keylist)
+                            entries,rec = getProg(getFile(source,0,ver),[],keylist,update_progress)
                             totalentries += entries
                             reclist += rec
                         if dt>dtmax:
@@ -154,7 +191,7 @@ def getProgList(ver=''):
                 break
 
     if (checkType(typ)==2) and len(channellist)>0:
-        totalentries,reclist = getProg(stri, channellist, keylist)
+        totalentries,reclist = getProg(stri, channellist, keylist, update_progress)
 
     totalrecords = len(reclist)
     if totalrecords > max_records:
@@ -167,7 +204,7 @@ def getProgList(ver=''):
     print ("XMLTV import completed with %s entries" % totalentries)
     return totalrecords
 
-def getProg(strp, channellist=[], keylist=[]):
+def getProg(strp, channellist=[], keylist=[], progress_callback=None):
     deltaxmltv_txt = config.cfg_xmltvtimeshift
     try:
         deltaxmltv = timedelta(hours=float(config.cfg_xmltvtimeshift))
@@ -182,18 +219,24 @@ def getProg(strp, channellist=[], keylist=[]):
 
     sqllist = []
 
+    programme_total = strp.count('<programme')
+    if progress_callback:
+        progress_callback(0, programme_total)
+
     for attr,innertxt in getList(strp, 'programme'):
-        dt1 = datetime.strptime(getAttr(attr, "start")[0:14],"%Y%m%d%H%M%S") + deltaxmltv
+        if progress_callback:
+            progress_callback(1, 0)
+        dt1 = parse_xmltv_datetime(getAttr(attr, "start")) + deltaxmltv
         try:
-            dt2 = datetime.strptime(getAttr(attr, "stop")[0:14],"%Y%m%d%H%M%S") + deltaxmltv
+            dt2 = parse_xmltv_datetime(getAttr(attr, "stop")) + deltaxmltv
         except:
-            dt2 = datetime.strptime(getAttr(attr, "end")[0:14],"%Y%m%d%H%M%S") + deltaxmltv
+            dt2 = parse_xmltv_datetime(getAttr(attr, "end")) + deltaxmltv
         p_id = getAttr(attr, "channel")
         if len(channellist)==0 or p_id in channellist:
             desc = ""
             title = getFirst(innertxt, 'title')
             sub_title = getFirst(innertxt, 'sub-title')
-            if not "http://" in sub_title and len(sub_title)>0: # fix for corrupted XML data
+            if not "http://" in sub_title and len(sub_title)>0 and sub_title != title: # fix for corrupted XML data
                 if title != "": title = title + " - "
                 title = title + sub_title
             for epatt, epin in getList(innertxt, 'episode-num'):
@@ -214,7 +257,9 @@ def getProg(strp, channellist=[], keylist=[]):
                     break
             tmpdesc = getFirst(innertxt, 'desc')
             desc = desc + tmpdesc
-            sqllist.append([p_id, title, datetime.strftime(dt1, "%Y-%m-%d %H:%M:%S"), datetime.strftime(dt2, "%Y-%m-%d %H:%M:%S"), desc])
+            icon = getProgrammeIcon(innertxt)
+            rating = getProgrammeRating(innertxt)
+            sqllist.append([p_id, title, datetime.strftime(dt1, "%Y-%m-%d %H:%M:%S"), datetime.strftime(dt2, "%Y-%m-%d %H:%M:%S"), desc, icon, rating])
             for key in keylist:
                 if key in title.lower():
                     rows = sqlRun("SELECT recname FROM records r JOIN channels c ON c.cid = r.cid JOIN guide_chan g ON c.cname = g.g_name WHERE g.g_id = ? AND ABS(JULIANDAY(rvon) - JULIANDAY(?))*24*60 < ? AND ABS(JULIANDAY(rbis) - JULIANDAY(?))*24*60 < ?", (p_id, datetime.strftime(dt1-delta_b, "%Y-%m-%d %H:%M:%S"), int(config.cfg_delta_before_epg), datetime.strftime(dt2+delta_a, "%Y-%m-%d %H:%M:%S"), int(config.cfg_delta_after_epg)))
@@ -224,7 +269,7 @@ def getProg(strp, channellist=[], keylist=[]):
                         print("XMLTV: Record '%s' is queued for autocreation" % (title, ))
                         reclist.append([title, datetime.strftime(dt1-delta_b, "%Y-%m-%d %H:%M:%S"), datetime.strftime(dt2+delta_a, "%Y-%m-%d %H:%M:%S"), p_id])
                     break
-    sqlRun("INSERT OR IGNORE INTO guide VALUES (?, ?, ?, ?, ?)", sqllist, 1)
+    sqlRun("INSERT OR IGNORE INTO guide (g_id, g_title, g_start, g_stop, g_desc, g_icon, g_rating) VALUES (?, ?, ?, ?, ?, ?, ?)", sqllist, 1)
     return len(sqllist), reclist
 
 def getLocalFile(file_in):

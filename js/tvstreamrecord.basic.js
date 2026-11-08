@@ -313,18 +313,24 @@ function paintTable() {
  * EPG button mode selector
  */
 var epgmode = 0;
+var epgButtonLabel = "";
 
 /**
  * Function for initializing EPG grab button
  * @return none
  */
+function epgHtmlEscape(value) {
+    return $('<div/>').text(value == null ? '' : String(value)).html();
+}
+
 function initEpgState() {
+    epgButtonLabel = $("#grabepg").text();
     getEpgState();
     $( "#grabepg" ).button()
     .click(function(event) {
         $.post("/grabepg", {"mode": epgmode},
             function() {
-                getEpgState();
+                setTimeout(getEpgState, 500);
             }, "json");
         event.preventDefault();
     });
@@ -341,22 +347,22 @@ function getEpgState() {
             epgmode = 0;
             $( "#grabepg" ).removeProp("disabled");
             $( "#grabepg" ).removeClass("ui-state-disabled");
-            if (state[2]=='0') {
+            if (state[2] == '0') {
                 $( "#grabepg" ).hide();
             } else {
                 if (state[0] == false) {
-                    //$( "#grabepg" ).html($( "#grabepg" ).attr("text1") );
+                    $( "#grabepg" ).text(epgButtonLabel);
                 } else {
-                    //if (state[3] == false) {
-                        //$( "#grabepg" ).html($( "#grabepg" ).attr("text3") + " (" + state[1] + '/' + state[2] + ")");
-                    //} else {
-                        //$( "#grabepg" ).html($( "#grabepg" ).attr("text4"));
-                        $( "#grabepg" ).prop("disabled", true);
-                        $( "#grabepg" ).addClass("ui-state-disabled");
-                    //}
+                    var percent = state[2] > 0 ? Math.min(100, Math.round(state[1] * 100 / state[2])) : 0;
+                    $( "#grabepg" ).text(epgButtonLabel + " (" + percent + "%)");
+                    $( "#grabepg" ).prop("disabled", true);
+                    $( "#grabepg" ).addClass("ui-state-disabled");
                     epgmode = 1;
                 }
                 $( "#grabepg" ).show();
+            }
+            if (state[0]) {
+                setTimeout(getEpgState, 500);
             }
         }, "json"
     );
@@ -1045,8 +1051,12 @@ $(function() {
                 ft = ft.replace(/\n/g, '<BR>');
 
                 if (ft)  {
+                    var poster = $(this).attr("poster");
+                    var rating = $(this).attr("rating");
+                    var posterHtml = poster ? '<img src="' + epgHtmlEscape(poster) + '" alt="" style="max-width:120px;max-height:180px;float:left;margin:0 12px 8px 0;" />' : "";
+                    var ratingHtml = rating ? '<div style="font-weight:bold;margin-bottom:8px;">★ ' + epgHtmlEscape(rating) + '</div>' : "";
                     $("#ret").val($(this).attr("rid"));
-                    $("#dialog_content").html ( ft );
+                    $("#dialog_content").html ( posterHtml + ratingHtml + ft );
 
                     recName = $(this).text();
                     recChannel = $(this).attr("cid");
@@ -1116,6 +1126,9 @@ $(function() {
                 return oData;
             },
             "fnRowCallback": function( nRow, aData, iDisplayIndex ) {
+                var poster = aData[9] ? '<img src="' + epgHtmlEscape(aData[9]) + '" alt="" style="max-width:42px;max-height:58px;vertical-align:middle;margin-right:6px;" />' : "";
+                var rating = aData[10] ? '<span style="white-space:nowrap;font-weight:bold;">★ ' + epgHtmlEscape(aData[10]) + '</span>' : "";
+                $('td:eq(1)', nRow).html(poster + epgHtmlEscape(aData[1]) + " " + rating);
                 $('td:eq(3)', nRow).html( localDateTime( aData[3] ) );
                 $('td:eq(4)', nRow).html( localDateTime( aData[4] ) );
                 if (aData[7]===null) { 

@@ -77,7 +77,7 @@ def sqlCreateAll(version):
         sql += 'CREATE TABLE IF NOT EXISTS records (recname TEXT, cid INTEGER, rvon TEXT, rbis TEXT, renabled INTEGER, rmask INTEGER, uniqueid TEXT, PRIMARY KEY (recname, cid, rvon, rbis, rmask));'
         sql += 'CREATE TABLE IF NOT EXISTS caching (crTime TEXT, url TEXT, Last_Modified TEXT, ETag TEXT);'
         sql += 'CREATE TABLE IF NOT EXISTS guide_chan (g_id TEXT UNIQUE, g_name TEXT collate nocase UNIQUE, g_lasttime TEXT);'
-        sql += 'CREATE TABLE IF NOT EXISTS guide (g_id TEXT, g_title TEXT, g_start TEXT, g_stop TEXT, g_desc TEXT, PRIMARY KEY (g_id, g_start, g_stop));'
+        sql += 'CREATE TABLE IF NOT EXISTS guide (g_id TEXT, g_title TEXT, g_start TEXT, g_stop TEXT, g_desc TEXT, g_icon TEXT, g_rating TEXT, PRIMARY KEY (g_id, g_start, g_stop));'
         sql += 'CREATE TABLE IF NOT EXISTS config (param TEXT UNIQUE, desc TEXT, value TEXT);'
         sql += 'CREATE TABLE IF NOT EXISTS blacklist (ip TEXT UNIQUE, trycount INTEGER, lasttry TEXT);'
         sql += "INSERT OR REPLACE INTO config VALUES ('cfg_version', 'Program version', '%s');" % version
@@ -133,6 +133,14 @@ def sqlCreateAll(version):
                     sql += "DELETE FROM config WHERE param = 'cfg_ffmpeg_types';"
                     sql += "INSERT OR IGNORE INTO config VALUES ('cfg_switch_legacy', 'Use legacy recording method for http streams', '0');"
                     
+                if oldver < '1.6.7':
+                    guide_cols = sqlRun('PRAGMA table_info(guide)')
+                    guide_names = [col[1] for col in guide_cols]
+                    if 'g_icon' not in guide_names:
+                        sql += 'ALTER TABLE guide ADD COLUMN g_icon TEXT;'
+                    if 'g_rating' not in guide_names:
+                        sql += 'ALTER TABLE guide ADD COLUMN g_rating TEXT;'
+
                 if oldver > version:
                     print ("Critical error: Version mismatch!!!")
 

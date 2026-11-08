@@ -21,7 +21,7 @@ from __future__ import unicode_literals
 from __future__ import division
 import sys, os
 sys.path.append(os.getcwd())
-from bottle import CherryPyServer # , TEMPLATES
+
 from bottle import route, run, template, post, request, response
 from bottle import static_file, redirect
 from datetime import datetime, timedelta, time, date
@@ -79,7 +79,7 @@ localtime = "%H:%M"
 localdate = "%d.%m.%Y"
 dayshown = datetime.combine(date.today(), time.min)
 shutdown = False
-version = "1.6.6"
+version = "1.6.7"
 
 @route('/live/<filename>')
 def server_static9(filename):
@@ -229,7 +229,7 @@ def checkLang():
         ret_loc = True
     ret_style = ( fileexists("css/" + config.cfg_theme) )
     if not ret_style:
-        config.cfg_theme = "smoothness/jquery-ui-1.10.4.custom.min.css"
+        config.cfg_theme = "smoothness/jquery-ui.min.css"
         print ("Theme not found, reverting to default theme")
     if not (ret_loc and ret_lng and ret_style):
         config.saveConfig()
@@ -488,40 +488,49 @@ def parse_list_cyclic():
         if content:
             parse_list(content, 1)
 
-def parse_list(content,how):
+def parse_list(content, how):
     retl = []
-    try:
-        content = content.decode("UTF-8")
-    except:
-        pass
-    if "#EXTM3U" in content:
-        rowid = 1
-        if how==0:
-            sqlRun('DELETE FROM channels')
-            sqlRun('DELETE FROM records')
-            setRecords()
-        else:
-            rows2 = sqlRun("select max(cid) from channels")
-            if rows2 and not rows2[0][0] is None:
-                rowid = rows2[0][0]+1
 
-        lines = content.splitlines()
-        i = 0
-        name = ""
-        for line in lines:
-            if line != "" and not "#EXTVLCOPT" in line and not "#EXTM3U" in line:
-                i = i + 1
-                if i % 2 == 1:
-                    name = line.split(",",1)[1]
-                if i % 2 == 0:
-                    retl.append([name, line, rowid])
-                    rowid = rowid + 1
-                    name = ""
+    if isinstance(content, bytes):
+        content = content.decode("utf-8-sig", errors="replace")
+    else:
+        content = content.lstrip("\ufeff")
+
+    if "#EXTM3U" not in content:
+        print("Bad M3U format detected (missing #EXTM3U tag)")
+        return
+
+    rowid = 1
+    if how == 0:
+        sqlRun('DELETE FROM channels')
+        sqlRun('DELETE FROM records')
+        setRecords()
+    else:
+        rows2 = sqlRun("select max(cid) from channels")
+        if rows2 and rows2[0][0] is not None:
+            rowid = rows2[0][0] + 1
+
+    name = None
+    for rawline in content.splitlines():
+        line = rawline.strip()
+        if not line:
+            continue
+        if line.startswith("#EXTINF:"):
+            parts = line.split(",", 1)
+            name = parts[1].strip() if len(parts) == 2 else None
+            continue
+        if line.startswith("#"):
+            continue
+        if name is not None:
+            retl.append([name, line, rowid])
+            rowid += 1
+            name = None
+
+    if retl:
         sqlRun("INSERT OR IGNORE INTO channels VALUES (?, ?, '1', '', ?, 0)", retl, 1)
         sqlRun("UPDATE channels SET cpath=?2 WHERE cname=?1 AND ?3=?3", retl, 1)
-        print("M3U parsing completed with %d entries" % len(retl))
-    else:
-        print("Bad M3U format detected (missing #EXTM3U tag)")
+
+    print("M3U parsing completed with %d entries" % len(retl))
 
 #------------------------------- Configuration -------------------------------
 
@@ -556,11 +565,10 @@ def config_p():
 def config_s():
     themes = list()
     for theme in os.listdir("css"):
-        if os.path.isdir("css/"+theme) == True:
-            for css in os.listdir("css/"+theme+"/"):
-                if css.endswith(".css"):
-                    themes.append([theme+'/'+css,theme])
-                    break
+        if os.path.isdir("css/"+theme):
+            css = "jquery-ui.min.css"
+            if fileexists("css/"+theme+"/"+css):
+                themes.append([theme+'/'+css,theme])
     languages = list()
     languages.append("english")
     for langfile in os.listdir("lang"):
@@ -635,9 +643,12 @@ class epggrabthread(Thread):
         return self.running
 
     def setChannelCount(self):
+        if self.running:
+            return
+        self.epggrabberstate[0] = 0
         self.epggrabberstate[1] = 0
         if config.cfg_switch_xmltv_auto=="1":
-            self.epggrabberstate[1] += 1
+            self.epggrabberstate[1] = 1
 
     def __init__(self):
         self.setChannelCount()
@@ -668,8 +679,8 @@ class epggrabthread(Thread):
         self.kill()
         self.running = True
         if config.cfg_switch_xmltv_auto=="1" and not self.stopflag: self.grabXML()
-        self.epggrabberstate[0]=0
         self.running = False
+        self.setChannelCount()
         if not override:
             sleep(61)
         self.stopflag = False
@@ -690,8 +701,13 @@ class epggrabthread(Thread):
                 print ("Error calling mc2xml: %s" % (ex))
                 pass
 
+        self.epggrabberstate[0] = 0
+        self.epggrabberstate[1] = 1
+        def update_progress(done, total):
+            self.epggrabberstate[0] = done
+            self.epggrabberstate[1] = max(total, 1)
         try:
-            if xmltv.getProgList(version)>0:
+            if xmltv.getProgList(version, update_progress)>0:
                 setRecords()
         except Exception as ex:
             print ("XMLTV import could not be completed, please try again later (%s)" % ex)
@@ -799,7 +815,7 @@ def epg_s(keyword=''):
     for row in rows:
         cid=row[1]
         rtemp = list()
-        c_rows=sqlRun("SELECT g_title, g_start, g_stop, g_desc, guide.rowid, COALESCE(records.rowid, recurr.rid, recurry.rid, -1) FROM guide " +
+        c_rows=sqlRun("SELECT g_title, g_start, g_stop, g_desc, guide.rowid, COALESCE(records.rowid, recurr.rid, recurry.rid, -1), g_icon, g_rating FROM guide " +
         "LEFT JOIN records ON records.cid=:1 AND guide.g_start>=records.rvon and guide.g_stop<=records.rbis " +
         "LEFT JOIN (" +
           "SELECT recname,cid, datetime(rvon, '+' || (julianday(date(:2)) - julianday(date(rvon))) || ' day') as rvon, datetime(rbis, '+' || (julianday(date(:2)) - julianday(date(rvon))) || ' day') as rbis, renabled, rmask, uniqueid, records.rowid as RID FROM records WHERE records.rmask & :3 = :3 AND date(records.rvon)<date(:2) AND cid=:1" +
@@ -810,11 +826,11 @@ def epg_s(keyword=''):
         "WHERE (date(g_start)=date(:2) OR date(g_stop)=date(:2)) AND datetime(g_stop, '+60 minutes')>datetime('now', 'localtime') AND g_id=:6 ORDER BY g_start", (cid, todaysql, weekbit, yestersql, weekbit_y, row[0]))
         if config.cfg_switch_epg_overlay == "1":
             # adding today records for overlay
-            c_rows += sqlRun("SELECT '', records.rvon, records.rbis, '', -2, -1 FROM records WHERE records.cid=:1 AND (date(records.rvon)=date(:2) OR date(records.rbis)=date(:2)) AND renabled=1 ORDER BY rvon", (cid, todaysql))
+            c_rows += sqlRun("SELECT '', records.rvon, records.rbis, '', -2, -1, '', '' FROM records WHERE records.cid=:1 AND (date(records.rvon)=date(:2) OR date(records.rbis)=date(:2)) AND renabled=1 ORDER BY rvon", (cid, todaysql))
             # adding recurrent records not yet scheduled
-            c_rows += sqlRun("SELECT '', datetime(rvon, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), datetime(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), '', -2, -1 FROM records WHERE records.cid=:2 AND records.rmask & :3 = :3 AND records.renabled=1 AND date(records.rvon)<date(:1)", (todaysql, cid, weekbit))
+            c_rows += sqlRun("SELECT '', datetime(rvon, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), datetime(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), '', -2, -1, '', '' FROM records WHERE records.cid=:2 AND records.rmask & :3 = :3 AND records.renabled=1 AND date(records.rvon)<date(:1)", (todaysql, cid, weekbit))
             # adding overnight recurrent records
-            c_rows += sqlRun("SELECT '', datetime(rvon, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), datetime(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), '', -2, -1 FROM records WHERE records.cid=:2 AND records.rmask & :3 = :3 AND records.renabled=1 AND date(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day')=date(:4)", (yestersql, cid, weekbit_y, todaysql))
+            c_rows += sqlRun("SELECT '', datetime(rvon, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), datetime(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day'), '', -2, -1, '', '' FROM records WHERE records.cid=:2 AND records.rmask & :3 = :3 AND records.renabled=1 AND date(rbis, '+' || (julianday(:1) - julianday(date(rvon))) || ' day')=date(:4)", (yestersql, cid, weekbit_y, todaysql))
         for event in c_rows:
 
             d_von = datetime.strptime(event[1],"%Y-%m-%d %H:%M:%S")
@@ -832,7 +848,7 @@ def epg_s(keyword=''):
             d_bis = datetime.strptime(event[2],"%Y-%m-%d %H:%M:%S")
 
             if x >= 0 and w > 0:
-                rtemp.append ([cid, x/totalwidth*100.0*widthq, w/totalwidth*100.0*widthq, event[0], d_von, d_bis, event[3], event[4], row[2], event[5]])
+                rtemp.append ([cid, x/totalwidth*100.0*widthq, w/totalwidth*100.0*widthq, event[0], d_von, d_bis, event[3], event[4], row[2], event[5], event[6], event[7]])
         ret.append(rtemp)
         if keyword == '':
             try:
@@ -880,7 +896,7 @@ def epglist_getter():
         if iSearch and iSearch!="":
             sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
 
-        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s" % (sWhere, sOrder, sLimit)
+        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s" % (sWhere, sOrder, sLimit)
         countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s" % (sWhere)
         count = sqlRun(countquery)
         if count:
@@ -888,10 +904,10 @@ def epglist_getter():
 
         rows=sqlRun(query)
     else: # Client-side processing
-        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events))
+        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events))
 
     for row in rows:
-        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8]])
+        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
 
     return json.dumps(
                       {"aaData": retlist,
@@ -1488,13 +1504,13 @@ print ("Starting server on: %s:%s" % (config.cfg_server_bind_address, config.cfg
 try:
     import bottle
     bottle.TEMPLATE_PATH.insert(0, 'views')
-    run(host=config.cfg_server_bind_address, port=config.cfg_server_port, server=CherryPyServer, quiet=True)
+    run(host=config.cfg_server_bind_address, port=config.cfg_server_port, server="wsgiref", quiet=True)
 except Exception as ex:
     print ("Server exception or shutdown (%s)" % ex)
     pass
 #    print ("Server exception. Default network settings will be used this time. Please log in using port 8030 and check your network settings.")
 #    print ("Starting server on: 0.0.0.0:8030")
-#    run(host="0.0.0.0", port=8030, server=CherryPyServer, quiet=True)
+#    run(host="0.0.0.0", port=8030, server="wsgiref", quiet=True)
 
 # Server is shutting down, all threads should be eliminated
 shutdown = True

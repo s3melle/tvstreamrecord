@@ -46,9 +46,19 @@
 <div id="channelgroup" cnt="{{cnt}}">
         %for row in rows:
             %if cnt==0:
-    <div class="ui-widget-header" id="event" cnt="{{cnt}}" cid="{{row[0]}}" x="{{row[1]}}" width="{{row[2]}}" at="{{row[4]}}" till="{{row[5]}}" fulltext="{{row[6]}}" rid="{{row[7]}}" recording="{{row[9]}}">{{row[3]}}</div>
+    <div class="ui-widget-header" id="event" cnt="{{cnt}}" cid="{{row[0]}}" x="{{row[1]}}" width="{{row[2]}}" at="{{row[4]}}" till="{{row[5]}}" fulltext="{{row[6]}}" rid="{{row[7]}}" recording="{{row[9]}}" poster="{{row[10]}}" rating="{{row[11]}}">
+        %if row[10]:
+        <img src="{{row[10]}}" alt="" style="width:20px;height:30px;object-fit:cover;float:left;margin-right:3px;" />
+        %end
+        {{row[3]}}
+    </div>
             %else:
-    <div class="ui-state-default" id="event" cnt="{{cnt}}" cid="{{row[0]}}" x="{{row[1]}}" width="{{row[2]}}" at="{{row[4]}}" till="{{row[5]}}" fulltext="{{row[6]}}" rid="{{row[7]}}" recording="{{row[9]}}">{{row[3]}}</div>
+    <div class="ui-state-default" id="event" cnt="{{cnt}}" cid="{{row[0]}}" x="{{row[1]}}" width="{{row[2]}}" at="{{row[4]}}" till="{{row[5]}}" fulltext="{{row[6]}}" rid="{{row[7]}}" recording="{{row[9]}}" poster="{{row[10]}}" rating="{{row[11]}}">
+        %if row[10]:
+        <img src="{{row[10]}}" alt="" style="width:20px;height:30px;object-fit:cover;float:left;margin-right:3px;" />
+        %end
+        {{row[3]}}
+    </div>
             %end
         %end
 </div>
