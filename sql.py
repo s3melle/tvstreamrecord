@@ -141,6 +141,10 @@ def sqlCreateAll(version):
                     if 'g_rating' not in guide_names:
                         sql += 'ALTER TABLE guide ADD COLUMN g_rating TEXT;'
 
+                if oldver < '1.6.8':
+                    # Re-read XMLTV source files so existing programmes receive poster/rating metadata.
+                    sql += "UPDATE guide_chan SET g_lasttime='1970-01-01 00:00:00';"
+
                 if oldver > version:
                     print ("Critical error: Version mismatch!!!")
 
