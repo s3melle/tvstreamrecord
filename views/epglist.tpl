@@ -4,6 +4,19 @@
 <div id="delta_after_epg" delta="{{deltaa}}"></div>
     <div id="listmode" value="{{listmode}}"></div>
 <div id="users-contain" class="ui-widget">
+    <div style="margin:8px 0;">
+        <label for="epg_group_filter">Groupe M3U :</label>
+        <select id="epg_group_filter" class="text ui-widget-content ui-corner-all">
+            <option value="">Tous les groupes</option>
+            %for group in epggroups:
+                %if group[0] == selected_group:
+            <option value="{{group[0]}}" selected="selected">{{group[0]}}</option>
+                %else:
+            <option value="{{group[0]}}">{{group[0]}}</option>
+                %end
+            %end
+        </select>
+    </div>
     <h1><div class="lefty">§Electronic Program Guide§ - §list view§</div>
 <button id="grabepg" class="grabepgclass">§Import EPG§</button>
 </h1>
