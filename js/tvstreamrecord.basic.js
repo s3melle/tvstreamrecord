@@ -309,6 +309,49 @@ function paintTable() {
     $("tr:odd").css("background-color", $(".ui-tabs").css("background-color") );*/
 }
 
+function makeEpgColumnsResizable() {
+    var table = $('#table_epglist');
+    if (!table.length) return;
+    var storageKey = 'tvstreamrecord_epglist_column_widths';
+    var widths = {};
+    try { widths = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; }
+    catch (e) { widths = {}; }
+
+    table.find('thead th').each(function(index) {
+        var th = $(this);
+        var savedWidth = parseInt(widths[index], 10);
+        if (savedWidth > 40) {
+            th.css('width', savedWidth + 'px');
+            table.find('tbody tr').each(function() {
+                $(this).children('td').eq(index).css('width', savedWidth + 'px');
+            });
+        }
+        if (th.children('.epg-column-resizer').length) return;
+        th.css('position', 'relative');
+        var handle = $('<span class="epg-column-resizer"></span>');
+        th.append(handle);
+        handle.on('mousedown', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+            var startX = event.pageX;
+            var startWidth = th.outerWidth();
+            $(document).on('mousemove.epgColumnResize', function(moveEvent) {
+                var width = Math.max(55, startWidth + moveEvent.pageX - startX);
+                th.css('width', width + 'px');
+                table.find('tbody tr').each(function() {
+                    $(this).children('td').eq(index).css('width', width + 'px');
+                });
+            });
+            $(document).on('mouseup.epgColumnResize', function() {
+                widths[index] = Math.round(th.outerWidth());
+                try { localStorage.setItem(storageKey, JSON.stringify(widths)); }
+                catch (e) {}
+                $(document).off('.epgColumnResize');
+            });
+        });
+    });
+}
+
 /**
  * EPG button mode selector
  */
@@ -1109,8 +1152,18 @@ $(function() {
             "fnDrawCallback": function( oSettings ) {
                 initIcons();
                 paintTable();
+                makeEpgColumnsResizable();
             },
             "bServerSide": serverSide,
+            "aoColumns": [
+                {"mDataProp": 0},
+                {"mDataProp": 1},
+                {"mDataProp": 11, "sType": "numeric"},
+                {"mDataProp": 2},
+                {"mDataProp": 3},
+                {"mDataProp": 4},
+                {"mDataProp": 5, "bSortable": false, "bSearchable": false}
+            ],
             "stateSave": true,
             "stateDuration": 60 * 60 * 60 * 24,
             "stateSaveCallback": function (oSettings, oData) {
@@ -1128,13 +1181,14 @@ $(function() {
             "fnRowCallback": function( nRow, aData, iDisplayIndex ) {
                 var poster = aData[9] ? '<img src="' + epgHtmlEscape(aData[9]) + '" alt="" style="max-width:42px;max-height:58px;vertical-align:middle;margin-right:6px;" />' : "";
                 var rating = aData[10] ? '<span style="white-space:nowrap;font-weight:bold;">★ ' + epgHtmlEscape(aData[10]) + '</span>' : "";
-                $('td:eq(1)', nRow).html(poster + epgHtmlEscape(aData[1]) + " " + rating);
-                $('td:eq(3)', nRow).html( localDateTime( aData[3] ) );
-                $('td:eq(4)', nRow).html( localDateTime( aData[4] ) );
+                $('td:eq(1)', nRow).html(poster + epgHtmlEscape(aData[1]));
+                $('td:eq(2)', nRow).html(rating);
+                $('td:eq(4)', nRow).html( localDateTime( aData[3] ) );
+                $('td:eq(5)', nRow).html( localDateTime( aData[4] ) );
                 if (aData[7]===null) { 
-                    $('td:eq(5)', nRow).html('<label title="Create record" id="iconsERec-' + aData[6] + '" class="ui-state-default ui-corner-all"><span class="ui-icon ui-icon-play"></span></label>');
+                    $('td:eq(6)', nRow).html('<label title="Create record" id="iconsERec-' + aData[6] + '" class="ui-state-default ui-corner-all"><span class="ui-icon ui-icon-play"></span></label>');
                 } else {
-                    $('td:eq(5)', nRow).html('<label title="Delete record" id="iconsEStop-' + aData[7] + '" class="ui-state-default ui-corner-all"><span class="ui-icon ui-icon-close"></span></label>');
+                    $('td:eq(6)', nRow).html('<label title="Delete record" id="iconsEStop-' + aData[7] + '" class="ui-state-default ui-corner-all"><span class="ui-icon ui-icon-close"></span></label>');
                 }
             }
         });
