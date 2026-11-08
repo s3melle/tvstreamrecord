@@ -545,7 +545,8 @@ def parse_list(content, how):
             channel = sqlRun("SELECT cid FROM channels WHERE cname=?", (entry[0], ))
             if channel:
                 if entry[3]:
-                    sqlRun("INSERT OR REPLACE INTO channel_groups (cid, group_name) VALUES (?, ?)", (channel[0][0], entry[3]))
+                    sqlRun("DELETE FROM channel_groups WHERE cid=?", (channel[0][0], ))
+                    sqlRun("INSERT INTO channel_groups (cid, group_name) VALUES (?, ?)", (channel[0][0], entry[3]))
                 else:
                     sqlRun("DELETE FROM channel_groups WHERE cid=?", (channel[0][0], ))
 
