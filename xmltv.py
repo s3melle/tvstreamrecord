@@ -269,7 +269,19 @@ def getProg(strp, channellist=[], keylist=[], progress_callback=None):
                         print("XMLTV: Record '%s' is queued for autocreation" % (title, ))
                         reclist.append([title, datetime.strftime(dt1-delta_b, "%Y-%m-%d %H:%M:%S"), datetime.strftime(dt2+delta_a, "%Y-%m-%d %H:%M:%S"), p_id])
                     break
-    sqlRun("INSERT OR IGNORE INTO guide (g_id, g_title, g_start, g_stop, g_desc, g_icon, g_rating) VALUES (?, ?, ?, ?, ?, ?, ?)", sqllist, 1)
+    sqlRun("""
+        INSERT INTO guide (g_id, g_title, g_start, g_stop, g_desc, g_icon, g_rating)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(g_id, g_start, g_stop) DO UPDATE SET
+            g_title = excluded.g_title,
+            g_desc = excluded.g_desc,
+            g_icon = CASE
+                WHEN excluded.g_icon IS NOT NULL AND excluded.g_icon <> ''
+                THEN excluded.g_icon ELSE guide.g_icon END,
+            g_rating = CASE
+                WHEN excluded.g_rating IS NOT NULL AND excluded.g_rating <> ''
+                THEN excluded.g_rating ELSE guide.g_rating END
+    """, sqllist, 1)
     return len(sqllist), reclist
 
 def getLocalFile(file_in):
