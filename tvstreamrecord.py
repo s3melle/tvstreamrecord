@@ -334,6 +334,7 @@ def list_p():
     if what=="-1":
         sqlRun("DELETE FROM channels WHERE cid=%s" % (myid))
         sqlRun("DELETE FROM records WHERE cid=%s" % (myid))
+        sqlRun("DELETE FROM channel_groups WHERE cid=%s" % (myid))
     else:
         sqlRun("UPDATE channels SET cenabled=%s WHERE cid=%s" % (what, myid))
         sqlRun("UPDATE records SET renabled=%s WHERE cid=%s" % (what, myid))
@@ -399,17 +400,22 @@ def createchannel():
             if exists:
                 sqlRun("UPDATE channels SET cid = -1 WHERE cid = ?", (prev, ))
                 sqlRun("UPDATE records  SET cid = -1 WHERE cid = ?", (prev, ))
+                sqlRun("UPDATE channel_groups SET cid = -1 WHERE cid = ?", (prev, ))
                 if prev > cid:
                     sqlRun("UPDATE channels SET cid = cid+1 WHERE cid >= %s AND cid < %s" % (cid, prev))
                     sqlRun("UPDATE records  SET cid = cid+1 WHERE cid >= %s AND cid < %s" % (cid, prev))
+                    sqlRun("UPDATE channel_groups SET cid = cid+1 WHERE cid >= %s AND cid < %s" % (cid, prev))
                 else:
                     sqlRun("UPDATE channels SET cid = cid-1 WHERE cid > %s AND cid <= %s" % (prev, cid))
                     sqlRun("UPDATE records  SET cid = cid-1 WHERE cid > %s AND cid <= %s" % (prev, cid))
+                    sqlRun("UPDATE channel_groups SET cid = cid-1 WHERE cid > %s AND cid <= %s" % (prev, cid))
                 sqlRun("UPDATE channels SET cname=?, cid=?, cpath=?, cext=?, cenabled=?, epgscan=? WHERE cid=-1", (cname, cid, cpath, cext, aktiv, epggrab))
                 sqlRun("UPDATE records SET cid=? WHERE cid=-1", (cid, ))
+                sqlRun("UPDATE channel_groups SET cid=? WHERE cid=-1", (cid, ))
             else:
                 sqlRun("UPDATE channels SET cname=?, cid=?, cpath=?, cext=?, cenabled=?, epgscan=? WHERE cid=?", (cname, cid, cpath, cext, aktiv, epggrab, prev))
                 sqlRun("UPDATE records SET cid=? WHERE cid=?", (cid, prev))
+                sqlRun("UPDATE channel_groups SET cid=? WHERE cid=?", (cid, prev))
     else:
         if exists:
             sqlRun("UPDATE channels SET cid = cid+1 WHERE cid >= ?", (cid, ))
@@ -504,6 +510,7 @@ def parse_list(content, how):
     if how == 0:
         sqlRun('DELETE FROM channels')
         sqlRun('DELETE FROM records')
+        sqlRun('DELETE FROM channel_groups')
         setRecords()
     else:
         rows2 = sqlRun("select max(cid) from channels")
@@ -517,18 +524,29 @@ def parse_list(content, how):
             continue
         if line.startswith("#EXTINF:"):
             parts = line.split(",", 1)
+            extinf = parts[0]
             name = parts[1].strip() if len(parts) == 2 else None
             continue
         if line.startswith("#"):
             continue
         if name is not None:
-            retl.append([name, line, rowid])
+            group_match = re.search(r'group-title\s*=\s*(?:"([^"]*)"|([^,\s]*))', extinf, re.I)
+            group_name = group_match.group(1) if group_match and group_match.group(1) is not None else (group_match.group(2) if group_match else "")
+            retl.append([name, line, rowid, group_name])
             rowid += 1
             name = None
 
     if retl:
-        sqlRun("INSERT OR IGNORE INTO channels VALUES (?, ?, '1', '', ?, 0)", retl, 1)
-        sqlRun("UPDATE channels SET cpath=?2 WHERE cname=?1 AND ?3=?3", retl, 1)
+        channel_rows = [entry[:3] for entry in retl]
+        sqlRun("INSERT OR IGNORE INTO channels VALUES (?, ?, '1', '', ?, 0)", channel_rows, 1)
+        sqlRun("UPDATE channels SET cpath=?2 WHERE cname=?1 AND ?3=?3", channel_rows, 1)
+        for entry in retl:
+            channel = sqlRun("SELECT cid FROM channels WHERE cname=?", (entry[0], ))
+            if channel:
+                if entry[3]:
+                    sqlRun("INSERT OR REPLACE INTO channel_groups (cid, group_name) VALUES (?, ?)", (channel[0][0], entry[3]))
+                else:
+                    sqlRun("DELETE FROM channel_groups WHERE cid=?", (channel[0][0], ))
 
     print("M3U parsing completed with %d entries" % len(retl))
 
