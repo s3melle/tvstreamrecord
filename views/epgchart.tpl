@@ -9,6 +9,17 @@
             <button id="date_prev"><</button>
             <input type="text" maxlength="10" id="datepicker_epg" class="text ui-widget-content ui-corner-all" name="datepicker_epg" dbvalue="{{curr}}"/> 
             <button id="date_next">></button>
+            <label for="epg_group_filter">Groupe M3U :</label>
+            <select id="epg_group_filter" class="text ui-widget-content ui-corner-all">
+                <option value="">Tous les groupes</option>
+                %for group in epggroups:
+                    %if group[0] == selected_group:
+                <option value="{{group[0]}}" selected="selected">{{group[0]}}</option>
+                    %else:
+                <option value="{{group[0]}}">{{group[0]}}</option>
+                    %end
+                %end
+            </select>
             <div id="label_epg_2">§Keyword§:</div>
             <input type="text" maxlength="50" id="searchepg" class="text ui-widget-content ui-corner-all" name="searchepg" value=""/> 
             <button id="searchepgbutton">§Highlight§</button>
