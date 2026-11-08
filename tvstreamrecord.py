@@ -778,6 +778,10 @@ def setsearch_p():
     search = request.forms.search
     sqlRun("REPLACE INTO config(param, value) VALUES('cfg_epgchart_search', ?);", (search, ))
 
+def get_m3u_groups():
+    return sqlRun("SELECT DISTINCT cg.group_name FROM channel_groups cg INNER JOIN channels c ON c.cid=cg.cid WHERE c.cenabled=1 AND cg.group_name<>'' ORDER BY cg.group_name COLLATE NOCASE")
+
+
 @route('/epgchart&<keyword>')
 @route('/epgchart')
 def epg_s(keyword=''):
@@ -788,6 +792,7 @@ def epg_s(keyword=''):
     if dayshown < datetime.combine(date.today(), time.min):
         dayshown = datetime.combine(date.today(), time.min)
 
+    selected_group = request.query.get("group", "")
     todaysql = datetime.strftime(dayshown, "%Y-%m-%d %H:%M:%S")
     weekbit = pow(2, int(datetime.strftime(dayshown, "%w")))
     # For handling overnight recurrent records from yesterday
@@ -818,10 +823,14 @@ def epg_s(keyword=''):
         rtemp.append([-1, x, w, t.strftime("%H:%M"), "", "", "", -1, "", -1, "", ""])
     ret.append(rtemp)
 
-    rows=sqlRun("SELECT guide.g_id, channels.cid, channels.cname FROM guide, guide_chan, channels WHERE channels.cenabled=1 AND channels.cname=guide_chan.g_name AND guide.g_id=guide_chan.g_id AND (date(g_start)=date(?) OR date(g_stop)=date(?)) GROUP BY channels.cid ORDER BY channels.cid", (todaysql, todaysql))
+    group_filter = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+    row_params = (todaysql, todaysql, selected_group) if selected_group else (todaysql, todaysql)
+    rows=sqlRun("SELECT guide.g_id, channels.cid, channels.cname FROM guide, guide_chan, channels WHERE channels.cenabled=1 AND channels.cname=guide_chan.g_name AND guide.g_id=guide_chan.g_id AND (date(g_start)=date(?) OR date(g_stop)=date(?))" + group_filter + " GROUP BY channels.cid ORDER BY channels.cid", row_params)
     if config.cfg_switch_epg_overlay == "1":
         # insert only channels with records but without guide data for using with overlay
-        ol_rows = sqlRun("SELECT 'tvstreamrecord.service', channels.cid, channels.cname FROM channels JOIN records ON records.cid=channels.cid WHERE records.renabled=1 AND (date(records.rvon)=date(:1) OR date(records.rbis)=date(:1) OR records.rmask & :2 = :2 OR records.rmask & :3 = :3) AND channels.cenabled=1", (todaysql, weekbit, weekbit_y))
+        overlay_filter = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=:4)" if selected_group else ""
+        overlay_params = (todaysql, weekbit, weekbit_y, selected_group) if selected_group else (todaysql, weekbit, weekbit_y)
+        ol_rows = sqlRun("SELECT 'tvstreamrecord.service', channels.cid, channels.cname FROM channels JOIN records ON records.cid=channels.cid WHERE records.renabled=1 AND (date(records.rvon)=date(:1) OR date(records.rbis)=date(:1) OR records.rmask & :2 = :2 OR records.rmask & :3 = :3) AND channels.cenabled=1" + overlay_filter, overlay_params)
         for ol_row in ol_rows:
             found = False
             for row in rows:
@@ -879,7 +888,7 @@ def epg_s(keyword=''):
             except:
                 pass
             keyword = keyword.replace('%20',' ')
-    return internationalize(template('epgchart', keyword_for_epg=keyword, curr=datetime.strftime(dayshown, "%Y-%m-%d"), rowss=ret, zoom=config.cfg_grab_zoom, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg))
+    return internationalize(template('epgchart', keyword_for_epg=keyword, curr=datetime.strftime(dayshown, "%Y-%m-%d"), rowss=ret, zoom=config.cfg_grab_zoom, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group))
 
 @route('/epglist')
 @route('/epglist&<keyword>')
@@ -890,7 +899,8 @@ def epglist_s(keyword=''):
         except:
             pass
         keyword = keyword.replace('%20',' ')
-    return internationalize(template('epglist', keyword_for_epg=keyword, listmode=config.cfg_switch_epglist_mode, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg))
+    selected_group = request.query.get('group', '')
+    return internationalize(template('epglist', keyword_for_epg=keyword, listmode=config.cfg_switch_epglist_mode, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group))
 
 @route('/epglist_getter')
 def epglist_getter():
@@ -907,20 +917,26 @@ def epglist_getter():
             if 0 <= col < len(columns) and columns[col]:
                 direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
                 sOrder = "ORDER BY %s %s" % (columns[col], direction)
+        selected_group = request.query.get("group", "")
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
         iSearch = request.query.sSearch
         sWhere = ""
         if iSearch and iSearch!="":
             sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
 
-        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s" % (sWhere, sOrder, sLimit)
-        countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s" % (sWhere)
-        count = sqlRun(countquery)
+        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s %s" % (sWhere, group_sql, sOrder, sLimit)
+        countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s" % (sWhere, group_sql)
+        count = sqlRun(countquery, group_params)
         if count:
             totalrows = count[0][0]
 
-        rows=sqlRun(query)
+        rows=sqlRun(query, group_params)
     else: # Client-side processing
-        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events))
+        selected_group = request.query.get("group", "")
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0" + group_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), group_params)
 
     for row in rows:
         rating_score = None
