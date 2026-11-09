@@ -906,9 +906,10 @@ def epglist_s(keyword=''):
 
 @route('/epglist_getter')
 def epglist_getter():
-    sEcho =  request.query.sEcho
+    sEcho = request.query.sEcho
     retlist = []
     totalrows = 0
+
     filter_mode = request.query.get('filter_mode', 'now')
     filter_sql = ""
     filter_params = ()
@@ -937,6 +938,20 @@ def epglist_getter():
         else:
             filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ?) AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
         filter_params = (filter_date, filter_to, filter_date, filter_from)
+    else:
+        filter_sql = " AND datetime(guide.g_start)<=datetime('now', 'localtime') AND datetime(guide.g_stop)>datetime('now', 'localtime')"
+
+    selected_group = request.query.group
+    group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+    group_params = (selected_group,) if selected_group else ()
+    query_params = group_params + filter_params
+
+    iSearch = request.query.sSearch
+    sWhere = ""
+    if iSearch and iSearch != "":
+        sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
+
+    if sEcho: # Server-side processing
         columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
         sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
         iSortingCols = int(request.query.iSortingCols)
@@ -944,35 +959,22 @@ def epglist_getter():
         if iSortingCols:
             col = int(request.query['iSortCol_0'])
             if 0 <= col < len(columns) and columns[col]:
-                direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
+                direction = "ASC" if request.query['sSortDir_0'] == "asc" else "DESC"
                 sOrder = "ORDER BY %s %s" % (columns[col], direction)
-        selected_group = request.query.group
-        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
-        group_params = (selected_group,) if selected_group else ()
-        query_params = group_params + filter_params
-        iSearch = request.query.sSearch
-        sWhere = ""
-        if iSearch and iSearch!="":
-            sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
 
         query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE channels.cenabled<>0 %s %s %s %s %s" % (sWhere, group_sql, filter_sql, sOrder, sLimit)
         countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE channels.cenabled<>0 %s %s %s" % (sWhere, group_sql, filter_sql)
         count = sqlRun(countquery, query_params)
         if count:
             totalrows = count[0][0]
-
-        rows=sqlRun(query, query_params)
+        rows = sqlRun(query, query_params)
     else: # Client-side processing
-        selected_group = request.query.group
-        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
-        group_params = (selected_group,) if selected_group else ()
-        query_params = group_params + filter_params
-        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE channels.cenabled<>0" + group_sql + filter_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), query_params)
+        rows = sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE channels.cenabled<>0" + group_sql + filter_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), query_params)
 
     for row in rows:
         rating_score = None
         if row[10]:
-            rating_match = re.search(r'(\d+(?:[.,]\d+)?)', str(row[10]))
+            rating_match = re.search(r'(\\d+(?:[.,]\\d+)?)', str(row[10]))
             if rating_match:
                 try:
                     rating_score = float(rating_match.group(1).replace(',', '.'))
@@ -981,11 +983,11 @@ def epglist_getter():
         retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
 
     return json.dumps(
-                      {"aaData": retlist,
-                       "sEcho": sEcho,
-                      "iTotalRecords": totalrows,
-                       "iTotalDisplayRecords": totalrows
-                       } )
+        {"aaData": retlist,
+         "sEcho": sEcho,
+         "iTotalRecords": totalrows,
+         "iTotalDisplayRecords": totalrows
+        })
 
 
 # ------------------- Mobile version ----------------
