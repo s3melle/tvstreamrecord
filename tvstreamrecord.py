@@ -901,7 +901,7 @@ def epglist_s(keyword=''):
         except:
             pass
         keyword = keyword.replace('%20',' ')
-    selected_group = request.query.get('group', '')
+    selected_group = request.query.group
     return internationalize(template('epglist', keyword_for_epg=keyword, listmode=config.cfg_switch_epglist_mode, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group))
 
 @route('/epglist_getter')
@@ -909,6 +909,2001 @@ def epglist_getter():
     sEcho =  request.query.sEcho
     retlist = []
     totalrows = 0
+    filter_mode = request.query.get('filter_mode', 'now')
+    filter_sql = ""
+    filter_params = ()
+    if filter_mode == "now":
+        filter_sql = " AND datetime(guide.g_start)<=datetime('now', 'localtime') AND datetime(guide.g_stop)>datetime('now', 'localtime')"
+    elif filter_mode == "tomorrow":
+        filter_sql = " AND datetime(guide.g_start)<datetime(date('now', 'localtime', '+2 day')) AND datetime(guide.g_stop)>datetime(date('now', 'localtime', '+1 day'))"
+    elif filter_mode == "custom":
+        filter_date = request.query.get('filter_date', datetime.now().strftime("%Y-%m-%d"))
+        filter_from = request.query.get('filter_from', '00:00')
+        filter_to = request.query.get('filter_to', '23:59')
+        if not re.match(r'^\\d{4}-\\d{2}-\\d{2}
+        columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
+        sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
+        iSortingCols = int(request.query.iSortingCols)
+        sOrder = ""
+        if iSortingCols:
+            col = int(request.query['iSortCol_0'])
+            if 0 <= col < len(columns) and columns[col]:
+                direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
+                sOrder = "ORDER BY %s %s" % (columns[col], direction)
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        query_params = group_params + filter_params
+        iSearch = request.query.sSearch
+        sWhere = ""
+        if iSearch and iSearch!="":
+            sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
+
+        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE channels.cenabled<>0 %s %s %s %s %s" % (sWhere, group_sql, filter_sql, sOrder, sLimit)
+        countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE channels.cenabled<>0 %s %s %s" % (sWhere, group_sql, filter_sql)
+        count = sqlRun(countquery, query_params)
+        if count:
+            totalrows = count[0][0]
+
+        rows=sqlRun(query, query_params)
+    else: # Client-side processing
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        query_params = group_params + filter_params
+        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE channels.cenabled<>0" + group_sql + filter_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), query_params)
+
+    for row in rows:
+        rating_score = None
+        if row[10]:
+            rating_match = re.search(r'(\d+(?:[.,]\d+)?)', str(row[10]))
+            if rating_match:
+                try:
+                    rating_score = float(rating_match.group(1).replace(',', '.'))
+                except ValueError:
+                    pass
+        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
+
+    return json.dumps(
+                      {"aaData": retlist,
+                       "sEcho": sEcho,
+                      "iTotalRecords": totalrows,
+                       "iTotalDisplayRecords": totalrows
+                       } )
+
+
+# ------------------- Mobile version ----------------
+
+def getLocale():
+    if config.cfg_locale == "default":
+        return None
+    else:
+        try:
+            f = codecs.open("js/i18n/jquery.ui.datepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = loc[p1+2:p2]
+            f = codecs.open("js/i18n/jquery-ui-timepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = full + "," + loc[p1+1:p2]
+            #full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            return '{"' + full + '}'
+        except:
+            print ("Error at parsing locales to JSON string")
+            return None
+
+@route('/mobile')
+def records_s():
+    return internationalize(template('mobile',locale=getLocale(), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg),True)
+
+@route('/getchannelgroups')
+def getchannelgroups():
+    l = []
+    sql = "case WHEN  substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z' THEN  substr(upper(cname), 1, 1) ELSE '0' END"
+    sql = "select " + sql + ", count(cname) from channels where cenabled=1 group by " + sql
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getchannelgroup')
+def getchannelgroup():
+    l = []
+    id = request.forms.get("id")
+    sql = "select cid, cname from channels where cenabled=1 "
+    if id=='-':
+        sql = sql + "LIMIT 10"
+    elif id=='0':
+        sql = sql + "AND NOT (substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z')"
+    else:
+        sql = sql + "AND substr(upper(cname), 1, 1)  = '" + id + "'"
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getepgday')
+def getepgday():
+    cname = request.forms.get("cname")
+    try:
+        cname = cname.decode("utf-8")
+    except:
+        pass
+    rdate = request.forms.get("rdate")
+    rows=sqlRun("SELECT substr(g_title,1,50), g_start, substr(g_desc, 1, 100), g_stop FROM guide, guide_chan WHERE guide.g_id = guide_chan.g_id AND guide_chan.g_name=? AND (date(g_start)=date(?) OR date(g_stop)=date(?)) AND datetime(guide.g_stop)>datetime('now', 'localtime') ORDER BY g_start", (cname, rdate, rdate))
+    if rows:
+        return json.dumps({"aaData": rows} )
+    else:
+        return "null"
+
+#------------------------------- Record List -------------------------------
+
+@route('/getrecordlist')
+def getrecordlist():
+    l = []
+    rows=sqlRun("SELECT recname, cname, rvon, rbis, rmask, renabled, 100*(strftime('%s','now', 'localtime')-strftime('%s',rvon)) / (strftime('%s',rbis)-strftime('%s',rvon)), records.rowid, rvon, rbis, channels.cid FROM channels, records where channels.cid=records.cid ORDER BY rvon")
+    for row in rows:
+        m3u = "<a href=\"live/" + str(row[10]) + ".m3u\">" + row[1] + "</a>"
+        l.append([row[0], m3u, row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
+    return json.dumps({"aaData": l} )
+
+@route('/records')
+def records_s():
+    return internationalize(template('records', rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid')))
+
+@post('/records')
+def records_p():
+    what = request.forms.get("what")
+    myid = request.forms.get("myid")
+    if what=="-2":
+        sqlRun("DELETE FROM records WHERE datetime(rbis)<datetime('now', 'localtime') AND NOT rmask>0")
+    if what=="-1":
+        sqlRun("DELETE FROM records WHERE records.rowid=?", (myid, ))
+    else:
+        sqlRun("UPDATE records SET renabled=? WHERE rowid=?", (what, myid))
+    setRecords()
+    return "null"
+
+#------------------------------- Record creation -------------------------------
+
+@post('/createepg')
+def createepg():
+    sqlRun("INSERT OR IGNORE INTO records SELECT guide.g_title, channels.cid, datetime(guide.g_start, '-%s minutes'), datetime(guide.g_stop, '+%s minutes'), 1, 0, '' FROM guide, guide_chan, channels WHERE guide.g_id = guide_chan.g_id AND channels.cname = guide_chan.g_name AND guide.rowid=? GROUP BY datetime(guide.g_start, '-%s minutes')" % (config.cfg_delta_before_epg, config.cfg_delta_after_epg, config.cfg_delta_before_epg), (request.forms.ret, ))
+    setRecords()
+    return "null"
+
+@post('/createtvb')
+def create_tvb():
+
+    recname = request.forms.recname
+    sender = request.forms.sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    uniqueid = request.forms.uniqueid
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    print ("POST request received from TV-Browser plugin")
+    print ("Name: %s, channel: %s, start: %s, stop: %s" % (recname, sender, d_von, d_bis))
+    rows=sqlRun("SELECT cid FROM channels WHERE cname=? AND cenabled=1", (sender, ))
+    if rows:
+        cid = rows[0][0]
+        print ("Channel %s was found with CID %s, creating record" % (sender, cid))
+        deltaepgbefore = timedelta(minutes=int(config.cfg_delta_before_epg))
+        deltaepgafter = timedelta(minutes=int(config.cfg_delta_after_epg))
+        d_von = d_von - deltaepgbefore
+        d_bis = d_bis + deltaepgafter
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, 1, 0, ?)", (recname, cid, d_von, d_bis, uniqueid))
+        setRecords()
+        return "true"
+    else:
+        print ("Channel %s could not be found, please check your channel names" % (sender))
+        return "false"
+
+@route('/gettvb')
+def gettvb():
+    ret = ""
+    rows=sqlRun("SELECT uniqueid FROM records WHERE uniqueid <> '' AND renabled=1")
+    for row in rows:
+        ret += row[0] + "\n"
+    return ret.rstrip()
+
+@post('/deletetvb')
+def deletetvb():
+    uniqueid = request.forms.uniqueid
+    rows = sqlRun("SELECT * FROM records WHERE uniqueid = ?", (uniqueid, ))
+    if len(rows) == 0:
+        return "false"
+    else:
+        sqlRun("DELETE FROM records WHERE uniqueid = ?", (uniqueid, ))
+        print ("TVB record '%s' has been deleted" % rows[0][0])
+        setRecords()
+        return "true"
+
+@post('/create')
+def create_p():
+    prev = request.forms.rprev
+    recname = request.forms.recname
+    sender = request.forms.Sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    aktiv = getBool(request.forms.aktiv)
+    recurr = request.forms.recurr
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+#    d_von = datetime.strptime(am + " " + von, "%d.%m.%Y %H:%M")
+#    d_bis = datetime.strptime(am + " " + bis, "%d.%m.%Y %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    if prev=="":
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, ?, ?, '')", (recname, sender, d_von, d_bis, aktiv, recurr))
+    else:
+        sqlRun("UPDATE records SET recname=?, cid=?, rvon=?, rbis=?, renabled=?, rmask=? WHERE rowid=?", (recname, sender, d_von, d_bis, aktiv, recurr,  prev))
+
+    setRecords()
+
+    return "null"
+
+def getBool(stri):
+    r = 0
+    if stri == "on" or stri == "1" or stri == "delete" or stri==1:
+        r = 1
+    return r
+
+
+class record(Thread):
+    running = 0
+    id = -1
+    stopflag = 0
+    timer = None
+    name = ""
+    mask = 0
+    ext = ""
+    process = None
+    myrow = None
+    retries = 0
+    retry_count = 0
+    ffmpeg = 0
+
+    def __init__(self, row):
+        Thread.__init__(self)
+        self.id = row[0]
+        self.von = datetime.strptime(row[2],"%Y-%m-%d %H:%M:%S")
+        self.bis = datetime.strptime(row[3],"%Y-%m-%d %H:%M:%S")
+        self.name = row[5]
+        self.url = row[1].strip()
+        self.mask = row[6]
+        self.myrow = row
+        if config.cfg_retry_count.isdigit():
+            self.retry_count = int(config.cfg_retry_count)
+        if row[7]=='':
+            self.ext = config.cfg_file_extension
+        else:
+            self.ext = row[7]
+        if self.mask > 0:
+            w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+            if not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                delta = timedelta(days=1)
+                while not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                    self.von = self.von + delta
+                    self.bis = self.bis + delta
+                    w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+                print ("Recurrent record '%s' moved to %s" % (self.name, self.von))
+                sqlRun("UPDATE records SET rvon='%s', rbis='%s' WHERE rowid=%d" % (datetime.strftime(self.von,"%Y-%m-%d %H:%M:%S"), datetime.strftime(self.bis,"%Y-%m-%d %H:%M:%S"), self.id ) )
+
+    def run(self):
+        td = tDiff(self.von,datetime.now())
+        deltas = total(td)
+        self.timer = Timer(deltas, self.doRecord)
+        self.timer.start()
+        if deltas>0:
+            print ("Record: Thread timer for '%s' started for %d seconds" % (self.name, deltas))
+
+    def doRecord(self):
+        if config.cfg_switch_concurrent == "0":
+            for t in records:
+                if t.isRunning():
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (t.id, ))
+                    t.stop()
+        self.running = 1
+
+        streamtype = self.url.lower().split(':', 1)[0]
+        ffargs = config.cfg_ffmpeg_params
+        ffargs = ffargs.split()
+
+        dateholder = datetime.now().strftime("%Y%m%d%H%M%S")
+        titleholder = "".join([x if x.isalnum() else "_" for x in self.name])
+        if sys.version_info[0] < 3 and not (streamtype == "http" and config.cfg_switch_legacy == "1"):
+            # workaround for unicode, damn me if I ever get it working with 2.x
+            titleholder = "".join([x if ord(x) < 128 else "_" for x in titleholder])
+        idholder = "%04d" % (self.myrow[8], )
+
+        fulltitle = self.name
+        # remove/replace illegal chars
+        safetitle = re.sub(r"[\?\:\{\}]", "", fulltitle)
+        safetitle = re.sub(r"[\"]", "'", safetitle)
+        safetitle = re.sub(r"[\&]", " ", safetitle)
+        safetitle = re.sub(r"[\~\#\%\*\\\<\>\/\+\|]", "_", safetitle.rstrip())
+
+        fn = config.cfg_record_mask
+        # Placeholders
+        fn = fn.replace("%date%", dateholder).replace("%title%", titleholder)
+        fn = fn.replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+        fn = fn.replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+        fn = fn.replace("%year2%", datetime.now().strftime("%y"))
+        fn = fn.replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+        if "%fulltitle%" in fn and sys.version_info[0] == 2 and os.name == "nt":
+            print ("Usage of %fulltitle% is not possible on Python 2.7 and Windows. Please consider upgrading your Python.")
+            fn = fn.replace("%fulltitle%", titleholder)
+        else:
+            fn = fn.replace("%fulltitle%", safetitle)
+        # Placeholders end
+        for i in range(0, len(ffargs)):
+            ffargs[i] = ffargs[i].replace("%date%", dateholder).replace("%title%", titleholder)
+            ffargs[i] = ffargs[i].replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+            ffargs[i] = ffargs[i].replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+            ffargs[i] = ffargs[i].replace("%year2%", datetime.now().strftime("%y"))
+            ffargs[i] = ffargs[i].replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+            ffargs[i] = ffargs[i].replace("%fulltitle%", fulltitle)
+
+        if "/" in fn or "\\" in fn:
+            try:
+                path = fn.replace('\\', "/")
+                pos = path.rfind("/")
+                path = path[:pos]
+                path = config.cfg_recordpath + path
+                os.makedirs (path)
+            except Exception as ex:
+                pass
+
+        fn = config.cfg_recordpath + fn
+        # Check, if destination file already exists
+        fn_check = fn + self.ext
+        num = 1
+        while fileexists(fn_check) and num<127:
+            fn_check = fn + ("_%s" % num) + self.ext
+            num += 1
+        fn = fn_check
+        # End check
+        if not ((streamtype == "http" or streamtype == "https") and config.cfg_switch_legacy == "1"):
+            delta = total(tDiff(self.bis, datetime.now()))
+            deltasec = '%d' % delta
+
+            try:
+                if config.cfg_ffmpeg_alternate_url != "":
+                    for t in records:
+                        if t.isRunning() == 1 and t.isFfmpeg() == 1:
+                            parser = urlparse.urlsplit(self.url)
+                            self.url = urlparse.urlunsplit([parser.scheme, config.cfg_ffmpeg_alternate_url, parser.path, parser.query, parser.fragment])
+                            print ("FFMPEG record already in progress, substituting URL...")
+                            self.ffmpeg = 2
+                            break
+            except:
+                pass
+
+            if self.ffmpeg == 0:
+                self.ffmpeg = 1
+
+            attr = shlex.split(config.cfg_ffmpeg_path) + ["-i", self.url, '-y', '-t', deltasec] + ffargs + [fn]
+            print ("FFMPEG (%s) record '%s' called with:" % (streamtype, self.name))
+            print (attr)
+            try:
+                if config.cfg_switch_proxy == "1" and config.cfg_proxy != "":
+                    os.environ["http_proxy"] = config.cfg_proxy
+                else:
+                    os.environ["http_proxy"] = ""
+                self.process = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                cleaner = Timer(delta+30, self.cleanProcess) # if ffmpeg won't exit, try to terminate its process in 30 seconds
+                cleaner.start()
+                out, err = self.process.communicate()
+                #self.process.wait() # oops... not needed? harmless!
+                cleaner.cancel()
+                if err:
+                    print ("FFMPEG record '%s' ended with an error:\n%s" % (self.name, err))
+                else:
+                    print ("FFMPEG record '%s' ended" % self.name)
+            except Exception as ex:
+                print ("FFMPEG could not be started. Error: %s" % (ex))
+        else:
+            block_sz = 8192
+            print ("Record: '%s' started using legacy method" % (self.name))
+            try:
+                if sys.version_info[0] == 3:
+                    req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                    u = urllib32.urlopen(req)
+                else:
+                    u = urllib32.urlopen(self.url)
+                try:
+                    f = open(fn, 'wb')
+                except:
+                    f = open(fn.encode('utf-8').decode(sys.getfilesystemencoding()), 'wb')
+            #except urllib32.URLError:
+            #    print ("Stream could not be parsed (URL=%s), aborting..." % (self.url))
+            except ValueError as ex:
+                print ("Unknown URL type (%s), record could not be started. Please check your channel settings" % (self.url))
+            except Exception as ex:
+                print ("Output file %s could not be created. Please check your settings. Description: %s" % (fn, ex))
+            else:
+                internalRetryCount = 0
+                maxRetryCount = 100
+                mybuffer = None
+                while self.bis > datetime.now() and self.stopflag==0:
+                    try:
+                        mybuffer = u.read(block_sz)
+                        doInternalRetry = False
+                    except:
+                        doInternalRetry = True
+                    if (not mybuffer or doInternalRetry) and internalRetryCount < maxRetryCount: # connection lost?
+                        internalRetryCount += 1
+                        try:
+                            if sys.version_info[0] == 3:
+                                req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                                u = urllib32.urlopen(req)
+                            else:
+                                u = urllib32.urlopen(self.url)
+                            mybuffer = u.read(block_sz)
+                            f.write(mybuffer)
+                        except:
+                            pass
+                    elif internalRetryCount >= maxRetryCount:
+                        print ("Record: '%s': too many internal retries, aborting..." % (self.name))
+                        break
+                    else:
+                        f.write(mybuffer)
+
+                f.close()
+                if internalRetryCount > 0:
+                    print ("Record: '%s' ended with %s internal retries, please check your connection stability" % (self.name, internalRetryCount))
+                else:
+                    print ("Record: '%s' ended" % (self.name))
+
+        if config.cfg_switch_postprocess == "1" and config.cfg_postprocess != "":
+            if fileexists(fn):
+                attr = []
+                attr = shlex.split(config.cfg_postprocess)
+                for i in range(0, len(attr)):
+                    attr[i] = attr[i].replace("%file%", fn)
+                print ("Postprocessing will be called with following parameters:")
+                print (attr)
+                try:
+                    postprocess = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    out, err = postprocess.communicate()
+                except:
+                    print ("Exception calling postprocessing, please check your command line")
+
+        # 2015-01-21 Fail & recurrency check
+        if self.stopflag==0:
+            delta = total(tDiff(self.bis, datetime.now()))
+            failsafe_delta=int(config.cfg_failsafe_delta)
+            if delta > failsafe_delta:
+                if self.retry_count == 0:
+                    print ("Something went wrong with '%s'. No retries configured, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries == self.retry_count:
+                    print ("Something went wrong with '%s'. Last retry reached, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries < self.retry_count:
+                    self.retries += 1
+                    print ("Something went wrong with '%s', retry %s/%s in 10 seconds" % (self.name, self.retries, self.retry_count))
+                    sleep(10)
+                    if self.stopflag==0:
+                        self.run()
+                    else:
+                        print ("Retrying cancelled due to a stopflag")
+                    return
+            elif delta > 0:
+                print ("Something went wrong with '%s'. Remaining time is less than fail-safe delta, sleeping..." % (self.name))
+                #sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                sleep(delta)
+
+        self.clean()
+        rectimer = Timer(10, setRecords)
+        rectimer.start()
+
+    def stop(self):
+        if self.running==0:
+            self.timer.cancel()
+        self.stopflag = 1
+        if not self.process==None:
+            if self.process.poll()==None:
+                self.process.terminate()
+        self.clean()
+        print ("Record: Stopflag for '%s' received" % (self.name))
+
+    def clean(self):
+        self.running = 0
+        if self in records: records.remove(self)
+
+    def cleanProcess(self):
+        try:
+            if not self.process==None:
+                self.process.terminate()
+            sleep(3)
+            if not self.process==None:
+                self.process.kill()
+                print ("FFMPEG Record '%s' had to be killed. R.I.P." % self.name)
+            else:
+                print ("FFMPEG Record '%s' had to be terminated." % self.name)
+        except:
+            print ("FFMPEG Record '%s' termination error, process might be running" % self.name)
+        if not self.process==None:
+            print ("FFMPEG Record '%s': termination may have failed" % self.name)
+        self.running = 0
+
+    def isFfmpeg(self):
+        return self.ffmpeg
+
+    def isRunning(self):
+        return self.running
+
+def setRecords():
+    if shutdown:
+        return
+    rows=sqlRun("SELECT records.rowid, cpath, rvon, rbis, cname, records.recname, records.rmask, channels.cext, channels.cid, channels.cname FROM channels, records where channels.cid=records.cid AND (datetime(rbis)>=datetime('now', 'localtime') OR rmask>0) AND renabled = 1 ORDER BY datetime(rvon)")
+    for row in rows:
+        chk = False
+        for t in records:
+            if t.id == row[0]:
+                if t.myrow[1]!=row[1] or t.myrow[2]!=row[2] or t.myrow[3]!=row[3] or t.myrow[4]!=row[4] or t.myrow[5]!=row[5]  or t.myrow[6]!=row[6]  or t.myrow[7]!=row[7]:
+                    t.stop()
+                    chk = False
+                else:
+                    chk = True
+                break
+        if chk == False:
+            thread = record(row)
+            thread.start()
+            records.append(thread)
+
+    for i in range(len(records)-1,-1,-1):
+        t = records[i]
+        chk = False
+        for row in rows:
+            if t.id == row[0]:
+                chk = True
+                break
+        if chk == False:
+            t.stop()
+
+#------------------------------- Database switching ----------------------------
+
+def checkDb(default = "settings.db"):
+    dbpath = readDbFile()
+    if dbpath != "" and dbpath != "settings.db":
+        if not fileexists(dbpath) and fileexists(default):
+            print ("Portable configuration at '%s' not found, default db '%s' will be copied" % (dbpath, default))
+            try:
+                shutil.copyfile(default, dbpath)
+            except:
+                print ("Portable database could not be copied, please check your settings and permissions")
+        if not fileexists(dbpath):
+            print ("Attempt to initialize a new database")
+            setDb(dbpath)
+            sqlCreateAll(version)
+        if not fileexists(dbpath):
+            print ("Portable database creation has failed, use default db '%s' instead" % default)
+            setDb(default)
+            writeDbFile(default)
+        else:
+            print("Using portable database at '%s'" % dbpath)
+            setDb(dbpath)
+    return dbpath
+
+def readDbFile():
+    ret = "settings.db"
+    if fileexists("db.ini"):
+        file = open("db.ini", "r")
+        ret = file.readline().rstrip()
+        file.close()
+    return ret
+
+def writeDbFile(path):
+    file = open("db.ini", "w")
+    file.write(path + "\n")
+    file.close()
+
+#------------------------------- Sync thread ----------------------------------
+parse_list_timer = None
+
+def channel_sync_start():
+    global parse_list_timer
+    timer_timeout = int(config.cfg_m3u_timer)
+    if timer_timeout > 0 and not config.cfg_m3u_path == "":
+        print ("Starting channel import thread for every %s minutes" % (timer_timeout))
+        parse_list_timer = Parse_list_timer(timer_timeout * 60)
+        parse_list_timer.start()
+        
+def channel_sync_end():
+    global parse_list_timer
+    if parse_list_timer:
+        parse_list_timer.stop()
+
+#------------------------------- Main loop -------------------------------------
+
+print ("Initializing database... ")
+checkDb()
+sqlCreateAll(version)
+purgeDB()
+print ("Initializing config...")
+config.loadConfig()
+credentials = config.getUser()
+print ("Checking internationalization...")
+checkLang()
+print ("Initializing records...")
+setRecords()
+print ("Initializing EPG import thread...")
+grabthread = epggrabthread()
+grabthread.run()
+channel_sync_start()
+
+print ("Starting server on: %s:%s" % (config.cfg_server_bind_address, config.cfg_server_port))
+try:
+    import bottle
+    bottle.TEMPLATE_PATH.insert(0, 'views')
+    run(host=config.cfg_server_bind_address, port=config.cfg_server_port, server="wsgiref", quiet=True)
+except Exception as ex:
+    print ("Server exception or shutdown (%s)" % ex)
+    pass
+#    print ("Server exception. Default network settings will be used this time. Please log in using port 8030 and check your network settings.")
+#    print ("Starting server on: 0.0.0.0:8030")
+#    run(host="0.0.0.0", port=8030, server="wsgiref", quiet=True)
+
+# Server is shutting down, all threads should be eliminated
+shutdown = True
+print ("Server aborted. Stopping all records before exiting...")
+while len(records)>0:
+    records[0].stop()
+
+print ("Stopping EPG grab thread...")
+grabthread.kill()
+channel_sync_end()
+
+print ("tvstreamrecord v.%s: bye-bye" % version)
+logStop()
+, filter_date):
+            filter_date = datetime.now().strftime("%Y-%m-%d")
+        if not re.match(r'^([01]\\d|2[0-3]):[0-5]\\d
+        columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
+        sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
+        iSortingCols = int(request.query.iSortingCols)
+        sOrder = ""
+        if iSortingCols:
+            col = int(request.query['iSortCol_0'])
+            if 0 <= col < len(columns) and columns[col]:
+                direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
+                sOrder = "ORDER BY %s %s" % (columns[col], direction)
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        iSearch = request.query.sSearch
+        sWhere = ""
+        if iSearch and iSearch!="":
+            sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
+
+        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s %s" % (sWhere, group_sql, sOrder, sLimit)
+        countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s" % (sWhere, group_sql)
+        count = sqlRun(countquery, group_params)
+        if count:
+            totalrows = count[0][0]
+
+        rows=sqlRun(query, group_params)
+    else: # Client-side processing
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0" + group_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), group_params)
+
+    for row in rows:
+        rating_score = None
+        if row[10]:
+            rating_match = re.search(r'(\d+(?:[.,]\d+)?)', str(row[10]))
+            if rating_match:
+                try:
+                    rating_score = float(rating_match.group(1).replace(',', '.'))
+                except ValueError:
+                    pass
+        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
+
+    return json.dumps(
+                      {"aaData": retlist,
+                       "sEcho": sEcho,
+                      "iTotalRecords": totalrows,
+                       "iTotalDisplayRecords": totalrows
+                       } )
+
+
+# ------------------- Mobile version ----------------
+
+def getLocale():
+    if config.cfg_locale == "default":
+        return None
+    else:
+        try:
+            f = codecs.open("js/i18n/jquery.ui.datepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = loc[p1+2:p2]
+            f = codecs.open("js/i18n/jquery-ui-timepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = full + "," + loc[p1+1:p2]
+            #full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            return '{"' + full + '}'
+        except:
+            print ("Error at parsing locales to JSON string")
+            return None
+
+@route('/mobile')
+def records_s():
+    return internationalize(template('mobile',locale=getLocale(), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg),True)
+
+@route('/getchannelgroups')
+def getchannelgroups():
+    l = []
+    sql = "case WHEN  substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z' THEN  substr(upper(cname), 1, 1) ELSE '0' END"
+    sql = "select " + sql + ", count(cname) from channels where cenabled=1 group by " + sql
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getchannelgroup')
+def getchannelgroup():
+    l = []
+    id = request.forms.get("id")
+    sql = "select cid, cname from channels where cenabled=1 "
+    if id=='-':
+        sql = sql + "LIMIT 10"
+    elif id=='0':
+        sql = sql + "AND NOT (substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z')"
+    else:
+        sql = sql + "AND substr(upper(cname), 1, 1)  = '" + id + "'"
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getepgday')
+def getepgday():
+    cname = request.forms.get("cname")
+    try:
+        cname = cname.decode("utf-8")
+    except:
+        pass
+    rdate = request.forms.get("rdate")
+    rows=sqlRun("SELECT substr(g_title,1,50), g_start, substr(g_desc, 1, 100), g_stop FROM guide, guide_chan WHERE guide.g_id = guide_chan.g_id AND guide_chan.g_name=? AND (date(g_start)=date(?) OR date(g_stop)=date(?)) AND datetime(guide.g_stop)>datetime('now', 'localtime') ORDER BY g_start", (cname, rdate, rdate))
+    if rows:
+        return json.dumps({"aaData": rows} )
+    else:
+        return "null"
+
+#------------------------------- Record List -------------------------------
+
+@route('/getrecordlist')
+def getrecordlist():
+    l = []
+    rows=sqlRun("SELECT recname, cname, rvon, rbis, rmask, renabled, 100*(strftime('%s','now', 'localtime')-strftime('%s',rvon)) / (strftime('%s',rbis)-strftime('%s',rvon)), records.rowid, rvon, rbis, channels.cid FROM channels, records where channels.cid=records.cid ORDER BY rvon")
+    for row in rows:
+        m3u = "<a href=\"live/" + str(row[10]) + ".m3u\">" + row[1] + "</a>"
+        l.append([row[0], m3u, row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
+    return json.dumps({"aaData": l} )
+
+@route('/records')
+def records_s():
+    return internationalize(template('records', rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid')))
+
+@post('/records')
+def records_p():
+    what = request.forms.get("what")
+    myid = request.forms.get("myid")
+    if what=="-2":
+        sqlRun("DELETE FROM records WHERE datetime(rbis)<datetime('now', 'localtime') AND NOT rmask>0")
+    if what=="-1":
+        sqlRun("DELETE FROM records WHERE records.rowid=?", (myid, ))
+    else:
+        sqlRun("UPDATE records SET renabled=? WHERE rowid=?", (what, myid))
+    setRecords()
+    return "null"
+
+#------------------------------- Record creation -------------------------------
+
+@post('/createepg')
+def createepg():
+    sqlRun("INSERT OR IGNORE INTO records SELECT guide.g_title, channels.cid, datetime(guide.g_start, '-%s minutes'), datetime(guide.g_stop, '+%s minutes'), 1, 0, '' FROM guide, guide_chan, channels WHERE guide.g_id = guide_chan.g_id AND channels.cname = guide_chan.g_name AND guide.rowid=? GROUP BY datetime(guide.g_start, '-%s minutes')" % (config.cfg_delta_before_epg, config.cfg_delta_after_epg, config.cfg_delta_before_epg), (request.forms.ret, ))
+    setRecords()
+    return "null"
+
+@post('/createtvb')
+def create_tvb():
+
+    recname = request.forms.recname
+    sender = request.forms.sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    uniqueid = request.forms.uniqueid
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    print ("POST request received from TV-Browser plugin")
+    print ("Name: %s, channel: %s, start: %s, stop: %s" % (recname, sender, d_von, d_bis))
+    rows=sqlRun("SELECT cid FROM channels WHERE cname=? AND cenabled=1", (sender, ))
+    if rows:
+        cid = rows[0][0]
+        print ("Channel %s was found with CID %s, creating record" % (sender, cid))
+        deltaepgbefore = timedelta(minutes=int(config.cfg_delta_before_epg))
+        deltaepgafter = timedelta(minutes=int(config.cfg_delta_after_epg))
+        d_von = d_von - deltaepgbefore
+        d_bis = d_bis + deltaepgafter
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, 1, 0, ?)", (recname, cid, d_von, d_bis, uniqueid))
+        setRecords()
+        return "true"
+    else:
+        print ("Channel %s could not be found, please check your channel names" % (sender))
+        return "false"
+
+@route('/gettvb')
+def gettvb():
+    ret = ""
+    rows=sqlRun("SELECT uniqueid FROM records WHERE uniqueid <> '' AND renabled=1")
+    for row in rows:
+        ret += row[0] + "\n"
+    return ret.rstrip()
+
+@post('/deletetvb')
+def deletetvb():
+    uniqueid = request.forms.uniqueid
+    rows = sqlRun("SELECT * FROM records WHERE uniqueid = ?", (uniqueid, ))
+    if len(rows) == 0:
+        return "false"
+    else:
+        sqlRun("DELETE FROM records WHERE uniqueid = ?", (uniqueid, ))
+        print ("TVB record '%s' has been deleted" % rows[0][0])
+        setRecords()
+        return "true"
+
+@post('/create')
+def create_p():
+    prev = request.forms.rprev
+    recname = request.forms.recname
+    sender = request.forms.Sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    aktiv = getBool(request.forms.aktiv)
+    recurr = request.forms.recurr
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+#    d_von = datetime.strptime(am + " " + von, "%d.%m.%Y %H:%M")
+#    d_bis = datetime.strptime(am + " " + bis, "%d.%m.%Y %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    if prev=="":
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, ?, ?, '')", (recname, sender, d_von, d_bis, aktiv, recurr))
+    else:
+        sqlRun("UPDATE records SET recname=?, cid=?, rvon=?, rbis=?, renabled=?, rmask=? WHERE rowid=?", (recname, sender, d_von, d_bis, aktiv, recurr,  prev))
+
+    setRecords()
+
+    return "null"
+
+def getBool(stri):
+    r = 0
+    if stri == "on" or stri == "1" or stri == "delete" or stri==1:
+        r = 1
+    return r
+
+
+class record(Thread):
+    running = 0
+    id = -1
+    stopflag = 0
+    timer = None
+    name = ""
+    mask = 0
+    ext = ""
+    process = None
+    myrow = None
+    retries = 0
+    retry_count = 0
+    ffmpeg = 0
+
+    def __init__(self, row):
+        Thread.__init__(self)
+        self.id = row[0]
+        self.von = datetime.strptime(row[2],"%Y-%m-%d %H:%M:%S")
+        self.bis = datetime.strptime(row[3],"%Y-%m-%d %H:%M:%S")
+        self.name = row[5]
+        self.url = row[1].strip()
+        self.mask = row[6]
+        self.myrow = row
+        if config.cfg_retry_count.isdigit():
+            self.retry_count = int(config.cfg_retry_count)
+        if row[7]=='':
+            self.ext = config.cfg_file_extension
+        else:
+            self.ext = row[7]
+        if self.mask > 0:
+            w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+            if not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                delta = timedelta(days=1)
+                while not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                    self.von = self.von + delta
+                    self.bis = self.bis + delta
+                    w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+                print ("Recurrent record '%s' moved to %s" % (self.name, self.von))
+                sqlRun("UPDATE records SET rvon='%s', rbis='%s' WHERE rowid=%d" % (datetime.strftime(self.von,"%Y-%m-%d %H:%M:%S"), datetime.strftime(self.bis,"%Y-%m-%d %H:%M:%S"), self.id ) )
+
+    def run(self):
+        td = tDiff(self.von,datetime.now())
+        deltas = total(td)
+        self.timer = Timer(deltas, self.doRecord)
+        self.timer.start()
+        if deltas>0:
+            print ("Record: Thread timer for '%s' started for %d seconds" % (self.name, deltas))
+
+    def doRecord(self):
+        if config.cfg_switch_concurrent == "0":
+            for t in records:
+                if t.isRunning():
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (t.id, ))
+                    t.stop()
+        self.running = 1
+
+        streamtype = self.url.lower().split(':', 1)[0]
+        ffargs = config.cfg_ffmpeg_params
+        ffargs = ffargs.split()
+
+        dateholder = datetime.now().strftime("%Y%m%d%H%M%S")
+        titleholder = "".join([x if x.isalnum() else "_" for x in self.name])
+        if sys.version_info[0] < 3 and not (streamtype == "http" and config.cfg_switch_legacy == "1"):
+            # workaround for unicode, damn me if I ever get it working with 2.x
+            titleholder = "".join([x if ord(x) < 128 else "_" for x in titleholder])
+        idholder = "%04d" % (self.myrow[8], )
+
+        fulltitle = self.name
+        # remove/replace illegal chars
+        safetitle = re.sub(r"[\?\:\{\}]", "", fulltitle)
+        safetitle = re.sub(r"[\"]", "'", safetitle)
+        safetitle = re.sub(r"[\&]", " ", safetitle)
+        safetitle = re.sub(r"[\~\#\%\*\\\<\>\/\+\|]", "_", safetitle.rstrip())
+
+        fn = config.cfg_record_mask
+        # Placeholders
+        fn = fn.replace("%date%", dateholder).replace("%title%", titleholder)
+        fn = fn.replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+        fn = fn.replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+        fn = fn.replace("%year2%", datetime.now().strftime("%y"))
+        fn = fn.replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+        if "%fulltitle%" in fn and sys.version_info[0] == 2 and os.name == "nt":
+            print ("Usage of %fulltitle% is not possible on Python 2.7 and Windows. Please consider upgrading your Python.")
+            fn = fn.replace("%fulltitle%", titleholder)
+        else:
+            fn = fn.replace("%fulltitle%", safetitle)
+        # Placeholders end
+        for i in range(0, len(ffargs)):
+            ffargs[i] = ffargs[i].replace("%date%", dateholder).replace("%title%", titleholder)
+            ffargs[i] = ffargs[i].replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+            ffargs[i] = ffargs[i].replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+            ffargs[i] = ffargs[i].replace("%year2%", datetime.now().strftime("%y"))
+            ffargs[i] = ffargs[i].replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+            ffargs[i] = ffargs[i].replace("%fulltitle%", fulltitle)
+
+        if "/" in fn or "\\" in fn:
+            try:
+                path = fn.replace('\\', "/")
+                pos = path.rfind("/")
+                path = path[:pos]
+                path = config.cfg_recordpath + path
+                os.makedirs (path)
+            except Exception as ex:
+                pass
+
+        fn = config.cfg_recordpath + fn
+        # Check, if destination file already exists
+        fn_check = fn + self.ext
+        num = 1
+        while fileexists(fn_check) and num<127:
+            fn_check = fn + ("_%s" % num) + self.ext
+            num += 1
+        fn = fn_check
+        # End check
+        if not ((streamtype == "http" or streamtype == "https") and config.cfg_switch_legacy == "1"):
+            delta = total(tDiff(self.bis, datetime.now()))
+            deltasec = '%d' % delta
+
+            try:
+                if config.cfg_ffmpeg_alternate_url != "":
+                    for t in records:
+                        if t.isRunning() == 1 and t.isFfmpeg() == 1:
+                            parser = urlparse.urlsplit(self.url)
+                            self.url = urlparse.urlunsplit([parser.scheme, config.cfg_ffmpeg_alternate_url, parser.path, parser.query, parser.fragment])
+                            print ("FFMPEG record already in progress, substituting URL...")
+                            self.ffmpeg = 2
+                            break
+            except:
+                pass
+
+            if self.ffmpeg == 0:
+                self.ffmpeg = 1
+
+            attr = shlex.split(config.cfg_ffmpeg_path) + ["-i", self.url, '-y', '-t', deltasec] + ffargs + [fn]
+            print ("FFMPEG (%s) record '%s' called with:" % (streamtype, self.name))
+            print (attr)
+            try:
+                if config.cfg_switch_proxy == "1" and config.cfg_proxy != "":
+                    os.environ["http_proxy"] = config.cfg_proxy
+                else:
+                    os.environ["http_proxy"] = ""
+                self.process = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                cleaner = Timer(delta+30, self.cleanProcess) # if ffmpeg won't exit, try to terminate its process in 30 seconds
+                cleaner.start()
+                out, err = self.process.communicate()
+                #self.process.wait() # oops... not needed? harmless!
+                cleaner.cancel()
+                if err:
+                    print ("FFMPEG record '%s' ended with an error:\n%s" % (self.name, err))
+                else:
+                    print ("FFMPEG record '%s' ended" % self.name)
+            except Exception as ex:
+                print ("FFMPEG could not be started. Error: %s" % (ex))
+        else:
+            block_sz = 8192
+            print ("Record: '%s' started using legacy method" % (self.name))
+            try:
+                if sys.version_info[0] == 3:
+                    req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                    u = urllib32.urlopen(req)
+                else:
+                    u = urllib32.urlopen(self.url)
+                try:
+                    f = open(fn, 'wb')
+                except:
+                    f = open(fn.encode('utf-8').decode(sys.getfilesystemencoding()), 'wb')
+            #except urllib32.URLError:
+            #    print ("Stream could not be parsed (URL=%s), aborting..." % (self.url))
+            except ValueError as ex:
+                print ("Unknown URL type (%s), record could not be started. Please check your channel settings" % (self.url))
+            except Exception as ex:
+                print ("Output file %s could not be created. Please check your settings. Description: %s" % (fn, ex))
+            else:
+                internalRetryCount = 0
+                maxRetryCount = 100
+                mybuffer = None
+                while self.bis > datetime.now() and self.stopflag==0:
+                    try:
+                        mybuffer = u.read(block_sz)
+                        doInternalRetry = False
+                    except:
+                        doInternalRetry = True
+                    if (not mybuffer or doInternalRetry) and internalRetryCount < maxRetryCount: # connection lost?
+                        internalRetryCount += 1
+                        try:
+                            if sys.version_info[0] == 3:
+                                req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                                u = urllib32.urlopen(req)
+                            else:
+                                u = urllib32.urlopen(self.url)
+                            mybuffer = u.read(block_sz)
+                            f.write(mybuffer)
+                        except:
+                            pass
+                    elif internalRetryCount >= maxRetryCount:
+                        print ("Record: '%s': too many internal retries, aborting..." % (self.name))
+                        break
+                    else:
+                        f.write(mybuffer)
+
+                f.close()
+                if internalRetryCount > 0:
+                    print ("Record: '%s' ended with %s internal retries, please check your connection stability" % (self.name, internalRetryCount))
+                else:
+                    print ("Record: '%s' ended" % (self.name))
+
+        if config.cfg_switch_postprocess == "1" and config.cfg_postprocess != "":
+            if fileexists(fn):
+                attr = []
+                attr = shlex.split(config.cfg_postprocess)
+                for i in range(0, len(attr)):
+                    attr[i] = attr[i].replace("%file%", fn)
+                print ("Postprocessing will be called with following parameters:")
+                print (attr)
+                try:
+                    postprocess = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    out, err = postprocess.communicate()
+                except:
+                    print ("Exception calling postprocessing, please check your command line")
+
+        # 2015-01-21 Fail & recurrency check
+        if self.stopflag==0:
+            delta = total(tDiff(self.bis, datetime.now()))
+            failsafe_delta=int(config.cfg_failsafe_delta)
+            if delta > failsafe_delta:
+                if self.retry_count == 0:
+                    print ("Something went wrong with '%s'. No retries configured, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries == self.retry_count:
+                    print ("Something went wrong with '%s'. Last retry reached, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries < self.retry_count:
+                    self.retries += 1
+                    print ("Something went wrong with '%s', retry %s/%s in 10 seconds" % (self.name, self.retries, self.retry_count))
+                    sleep(10)
+                    if self.stopflag==0:
+                        self.run()
+                    else:
+                        print ("Retrying cancelled due to a stopflag")
+                    return
+            elif delta > 0:
+                print ("Something went wrong with '%s'. Remaining time is less than fail-safe delta, sleeping..." % (self.name))
+                #sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                sleep(delta)
+
+        self.clean()
+        rectimer = Timer(10, setRecords)
+        rectimer.start()
+
+    def stop(self):
+        if self.running==0:
+            self.timer.cancel()
+        self.stopflag = 1
+        if not self.process==None:
+            if self.process.poll()==None:
+                self.process.terminate()
+        self.clean()
+        print ("Record: Stopflag for '%s' received" % (self.name))
+
+    def clean(self):
+        self.running = 0
+        if self in records: records.remove(self)
+
+    def cleanProcess(self):
+        try:
+            if not self.process==None:
+                self.process.terminate()
+            sleep(3)
+            if not self.process==None:
+                self.process.kill()
+                print ("FFMPEG Record '%s' had to be killed. R.I.P." % self.name)
+            else:
+                print ("FFMPEG Record '%s' had to be terminated." % self.name)
+        except:
+            print ("FFMPEG Record '%s' termination error, process might be running" % self.name)
+        if not self.process==None:
+            print ("FFMPEG Record '%s': termination may have failed" % self.name)
+        self.running = 0
+
+    def isFfmpeg(self):
+        return self.ffmpeg
+
+    def isRunning(self):
+        return self.running
+
+def setRecords():
+    if shutdown:
+        return
+    rows=sqlRun("SELECT records.rowid, cpath, rvon, rbis, cname, records.recname, records.rmask, channels.cext, channels.cid, channels.cname FROM channels, records where channels.cid=records.cid AND (datetime(rbis)>=datetime('now', 'localtime') OR rmask>0) AND renabled = 1 ORDER BY datetime(rvon)")
+    for row in rows:
+        chk = False
+        for t in records:
+            if t.id == row[0]:
+                if t.myrow[1]!=row[1] or t.myrow[2]!=row[2] or t.myrow[3]!=row[3] or t.myrow[4]!=row[4] or t.myrow[5]!=row[5]  or t.myrow[6]!=row[6]  or t.myrow[7]!=row[7]:
+                    t.stop()
+                    chk = False
+                else:
+                    chk = True
+                break
+        if chk == False:
+            thread = record(row)
+            thread.start()
+            records.append(thread)
+
+    for i in range(len(records)-1,-1,-1):
+        t = records[i]
+        chk = False
+        for row in rows:
+            if t.id == row[0]:
+                chk = True
+                break
+        if chk == False:
+            t.stop()
+
+#------------------------------- Database switching ----------------------------
+
+def checkDb(default = "settings.db"):
+    dbpath = readDbFile()
+    if dbpath != "" and dbpath != "settings.db":
+        if not fileexists(dbpath) and fileexists(default):
+            print ("Portable configuration at '%s' not found, default db '%s' will be copied" % (dbpath, default))
+            try:
+                shutil.copyfile(default, dbpath)
+            except:
+                print ("Portable database could not be copied, please check your settings and permissions")
+        if not fileexists(dbpath):
+            print ("Attempt to initialize a new database")
+            setDb(dbpath)
+            sqlCreateAll(version)
+        if not fileexists(dbpath):
+            print ("Portable database creation has failed, use default db '%s' instead" % default)
+            setDb(default)
+            writeDbFile(default)
+        else:
+            print("Using portable database at '%s'" % dbpath)
+            setDb(dbpath)
+    return dbpath
+
+def readDbFile():
+    ret = "settings.db"
+    if fileexists("db.ini"):
+        file = open("db.ini", "r")
+        ret = file.readline().rstrip()
+        file.close()
+    return ret
+
+def writeDbFile(path):
+    file = open("db.ini", "w")
+    file.write(path + "\n")
+    file.close()
+
+#------------------------------- Sync thread ----------------------------------
+parse_list_timer = None
+
+def channel_sync_start():
+    global parse_list_timer
+    timer_timeout = int(config.cfg_m3u_timer)
+    if timer_timeout > 0 and not config.cfg_m3u_path == "":
+        print ("Starting channel import thread for every %s minutes" % (timer_timeout))
+        parse_list_timer = Parse_list_timer(timer_timeout * 60)
+        parse_list_timer.start()
+        
+def channel_sync_end():
+    global parse_list_timer
+    if parse_list_timer:
+        parse_list_timer.stop()
+
+#------------------------------- Main loop -------------------------------------
+
+print ("Initializing database... ")
+checkDb()
+sqlCreateAll(version)
+purgeDB()
+print ("Initializing config...")
+config.loadConfig()
+credentials = config.getUser()
+print ("Checking internationalization...")
+checkLang()
+print ("Initializing records...")
+setRecords()
+print ("Initializing EPG import thread...")
+grabthread = epggrabthread()
+grabthread.run()
+channel_sync_start()
+
+print ("Starting server on: %s:%s" % (config.cfg_server_bind_address, config.cfg_server_port))
+try:
+    import bottle
+    bottle.TEMPLATE_PATH.insert(0, 'views')
+    run(host=config.cfg_server_bind_address, port=config.cfg_server_port, server="wsgiref", quiet=True)
+except Exception as ex:
+    print ("Server exception or shutdown (%s)" % ex)
+    pass
+#    print ("Server exception. Default network settings will be used this time. Please log in using port 8030 and check your network settings.")
+#    print ("Starting server on: 0.0.0.0:8030")
+#    run(host="0.0.0.0", port=8030, server="wsgiref", quiet=True)
+
+# Server is shutting down, all threads should be eliminated
+shutdown = True
+print ("Server aborted. Stopping all records before exiting...")
+while len(records)>0:
+    records[0].stop()
+
+print ("Stopping EPG grab thread...")
+grabthread.kill()
+channel_sync_end()
+
+print ("tvstreamrecord v.%s: bye-bye" % version)
+logStop()
+, filter_from):
+            filter_from = "00:00"
+        if not re.match(r'^([01]\\d|2[0-3]):[0-5]\\d
+        columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
+        sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
+        iSortingCols = int(request.query.iSortingCols)
+        sOrder = ""
+        if iSortingCols:
+            col = int(request.query['iSortCol_0'])
+            if 0 <= col < len(columns) and columns[col]:
+                direction = "ASC" if request.query['sSortDir_0']=="asc" else "DESC"
+                sOrder = "ORDER BY %s %s" % (columns[col], direction)
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        iSearch = request.query.sSearch
+        sWhere = ""
+        if iSearch and iSearch!="":
+            sWhere = "AND (guide_chan.g_name LIKE '%" + iSearch + "%' OR guide.g_title LIKE '%" + iSearch + "%' OR guide.g_desc LIKE '%" + iSearch + "%')"
+
+        query = "SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s %s %s" % (sWhere, group_sql, sOrder, sLimit)
+        countquery = "SELECT COUNT(guide.g_start) FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0 %s %s" % (sWhere, group_sql)
+        count = sqlRun(countquery, group_params)
+        if count:
+            totalrows = count[0][0]
+
+        rows=sqlRun(query, group_params)
+    else: # Client-side processing
+        selected_group = request.query.group
+        group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
+        group_params = (selected_group,) if selected_group else ()
+        rows=sqlRun("SELECT guide_chan.g_name, guide.g_title, guide.g_desc, guide.g_start, guide.g_stop, null, guide.rowid, records.rowid, records.renabled, guide.g_icon, guide.g_rating FROM guide INNER JOIN guide_chan ON guide.g_id = guide_chan.g_id INNER JOIN channels ON channels.cname=guide_chan.g_name LEFT JOIN records ON records.rvon <= guide.g_start AND records.rbis >= guide.g_stop AND records.cid = channels.cid WHERE datetime(guide.g_stop)>datetime('now', 'localtime') AND channels.cenabled<>0" + group_sql + " ORDER BY g_start LIMIT %s;" % (config.cfg_epg_max_events), group_params)
+
+    for row in rows:
+        rating_score = None
+        if row[10]:
+            rating_match = re.search(r'(\d+(?:[.,]\d+)?)', str(row[10]))
+            if rating_match:
+                try:
+                    rating_score = float(rating_match.group(1).replace(',', '.'))
+                except ValueError:
+                    pass
+        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
+
+    return json.dumps(
+                      {"aaData": retlist,
+                       "sEcho": sEcho,
+                      "iTotalRecords": totalrows,
+                       "iTotalDisplayRecords": totalrows
+                       } )
+
+
+# ------------------- Mobile version ----------------
+
+def getLocale():
+    if config.cfg_locale == "default":
+        return None
+    else:
+        try:
+            f = codecs.open("js/i18n/jquery.ui.datepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = loc[p1+2:p2]
+            f = codecs.open("js/i18n/jquery-ui-timepicker-" + config.cfg_locale + ".js", "r", "utf-8")
+            loc = f.read()
+            f.close()
+            p1 = loc.find("{")
+            p1 = loc.find("{", p1+1)
+            p2 = loc.find("}", p1+1)
+            full = full + "," + loc[p1+1:p2]
+            #full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            full = full.replace('\t', '').replace(',\n', ',"').replace(': ', '": ').replace('\n', '').replace("\"'",'"').replace("'",'"')
+            return '{"' + full + '}'
+        except:
+            print ("Error at parsing locales to JSON string")
+            return None
+
+@route('/mobile')
+def records_s():
+    return internationalize(template('mobile',locale=getLocale(), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg),True)
+
+@route('/getchannelgroups')
+def getchannelgroups():
+    l = []
+    sql = "case WHEN  substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z' THEN  substr(upper(cname), 1, 1) ELSE '0' END"
+    sql = "select " + sql + ", count(cname) from channels where cenabled=1 group by " + sql
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getchannelgroup')
+def getchannelgroup():
+    l = []
+    id = request.forms.get("id")
+    sql = "select cid, cname from channels where cenabled=1 "
+    if id=='-':
+        sql = sql + "LIMIT 10"
+    elif id=='0':
+        sql = sql + "AND NOT (substr(upper(cname), 1, 1)  >= 'A' AND  substr(upper(cname), 1, 1) <= 'Z')"
+    else:
+        sql = sql + "AND substr(upper(cname), 1, 1)  = '" + id + "'"
+    rows=sqlRun(sql)
+    for row in rows:
+        l.append([row[0], row[1]])
+    return json.dumps({"aaData": l} )
+
+@post('/getepgday')
+def getepgday():
+    cname = request.forms.get("cname")
+    try:
+        cname = cname.decode("utf-8")
+    except:
+        pass
+    rdate = request.forms.get("rdate")
+    rows=sqlRun("SELECT substr(g_title,1,50), g_start, substr(g_desc, 1, 100), g_stop FROM guide, guide_chan WHERE guide.g_id = guide_chan.g_id AND guide_chan.g_name=? AND (date(g_start)=date(?) OR date(g_stop)=date(?)) AND datetime(guide.g_stop)>datetime('now', 'localtime') ORDER BY g_start", (cname, rdate, rdate))
+    if rows:
+        return json.dumps({"aaData": rows} )
+    else:
+        return "null"
+
+#------------------------------- Record List -------------------------------
+
+@route('/getrecordlist')
+def getrecordlist():
+    l = []
+    rows=sqlRun("SELECT recname, cname, rvon, rbis, rmask, renabled, 100*(strftime('%s','now', 'localtime')-strftime('%s',rvon)) / (strftime('%s',rbis)-strftime('%s',rvon)), records.rowid, rvon, rbis, channels.cid FROM channels, records where channels.cid=records.cid ORDER BY rvon")
+    for row in rows:
+        m3u = "<a href=\"live/" + str(row[10]) + ".m3u\">" + row[1] + "</a>"
+        l.append([row[0], m3u, row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]])
+    return json.dumps({"aaData": l} )
+
+@route('/records')
+def records_s():
+    return internationalize(template('records', rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid')))
+
+@post('/records')
+def records_p():
+    what = request.forms.get("what")
+    myid = request.forms.get("myid")
+    if what=="-2":
+        sqlRun("DELETE FROM records WHERE datetime(rbis)<datetime('now', 'localtime') AND NOT rmask>0")
+    if what=="-1":
+        sqlRun("DELETE FROM records WHERE records.rowid=?", (myid, ))
+    else:
+        sqlRun("UPDATE records SET renabled=? WHERE rowid=?", (what, myid))
+    setRecords()
+    return "null"
+
+#------------------------------- Record creation -------------------------------
+
+@post('/createepg')
+def createepg():
+    sqlRun("INSERT OR IGNORE INTO records SELECT guide.g_title, channels.cid, datetime(guide.g_start, '-%s minutes'), datetime(guide.g_stop, '+%s minutes'), 1, 0, '' FROM guide, guide_chan, channels WHERE guide.g_id = guide_chan.g_id AND channels.cname = guide_chan.g_name AND guide.rowid=? GROUP BY datetime(guide.g_start, '-%s minutes')" % (config.cfg_delta_before_epg, config.cfg_delta_after_epg, config.cfg_delta_before_epg), (request.forms.ret, ))
+    setRecords()
+    return "null"
+
+@post('/createtvb')
+def create_tvb():
+
+    recname = request.forms.recname
+    sender = request.forms.sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    uniqueid = request.forms.uniqueid
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    print ("POST request received from TV-Browser plugin")
+    print ("Name: %s, channel: %s, start: %s, stop: %s" % (recname, sender, d_von, d_bis))
+    rows=sqlRun("SELECT cid FROM channels WHERE cname=? AND cenabled=1", (sender, ))
+    if rows:
+        cid = rows[0][0]
+        print ("Channel %s was found with CID %s, creating record" % (sender, cid))
+        deltaepgbefore = timedelta(minutes=int(config.cfg_delta_before_epg))
+        deltaepgafter = timedelta(minutes=int(config.cfg_delta_after_epg))
+        d_von = d_von - deltaepgbefore
+        d_bis = d_bis + deltaepgafter
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, 1, 0, ?)", (recname, cid, d_von, d_bis, uniqueid))
+        setRecords()
+        return "true"
+    else:
+        print ("Channel %s could not be found, please check your channel names" % (sender))
+        return "false"
+
+@route('/gettvb')
+def gettvb():
+    ret = ""
+    rows=sqlRun("SELECT uniqueid FROM records WHERE uniqueid <> '' AND renabled=1")
+    for row in rows:
+        ret += row[0] + "\n"
+    return ret.rstrip()
+
+@post('/deletetvb')
+def deletetvb():
+    uniqueid = request.forms.uniqueid
+    rows = sqlRun("SELECT * FROM records WHERE uniqueid = ?", (uniqueid, ))
+    if len(rows) == 0:
+        return "false"
+    else:
+        sqlRun("DELETE FROM records WHERE uniqueid = ?", (uniqueid, ))
+        print ("TVB record '%s' has been deleted" % rows[0][0])
+        setRecords()
+        return "true"
+
+@post('/create')
+def create_p():
+    prev = request.forms.rprev
+    recname = request.forms.recname
+    sender = request.forms.Sender
+    von = request.forms.von
+    bis = request.forms.bis
+    am = request.forms.am
+    aktiv = getBool(request.forms.aktiv)
+    recurr = request.forms.recurr
+
+    d_von = datetime.strptime(am + " " + von, "%Y-%m-%d %H:%M")
+    d_bis = datetime.strptime(am + " " + bis, "%Y-%m-%d %H:%M")
+#    d_von = datetime.strptime(am + " " + von, "%d.%m.%Y %H:%M")
+#    d_bis = datetime.strptime(am + " " + bis, "%d.%m.%Y %H:%M")
+    delta = timedelta(days=1)
+    if d_bis < d_von:
+        d_bis = d_bis + delta
+
+    if prev=="":
+        sqlRun("INSERT OR IGNORE INTO records VALUES (?, ?, ?, ?, ?, ?, '')", (recname, sender, d_von, d_bis, aktiv, recurr))
+    else:
+        sqlRun("UPDATE records SET recname=?, cid=?, rvon=?, rbis=?, renabled=?, rmask=? WHERE rowid=?", (recname, sender, d_von, d_bis, aktiv, recurr,  prev))
+
+    setRecords()
+
+    return "null"
+
+def getBool(stri):
+    r = 0
+    if stri == "on" or stri == "1" or stri == "delete" or stri==1:
+        r = 1
+    return r
+
+
+class record(Thread):
+    running = 0
+    id = -1
+    stopflag = 0
+    timer = None
+    name = ""
+    mask = 0
+    ext = ""
+    process = None
+    myrow = None
+    retries = 0
+    retry_count = 0
+    ffmpeg = 0
+
+    def __init__(self, row):
+        Thread.__init__(self)
+        self.id = row[0]
+        self.von = datetime.strptime(row[2],"%Y-%m-%d %H:%M:%S")
+        self.bis = datetime.strptime(row[3],"%Y-%m-%d %H:%M:%S")
+        self.name = row[5]
+        self.url = row[1].strip()
+        self.mask = row[6]
+        self.myrow = row
+        if config.cfg_retry_count.isdigit():
+            self.retry_count = int(config.cfg_retry_count)
+        if row[7]=='':
+            self.ext = config.cfg_file_extension
+        else:
+            self.ext = row[7]
+        if self.mask > 0:
+            w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+            if not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                delta = timedelta(days=1)
+                while not (self.von>=datetime.now() and getWeekdays(self.mask)[w]):
+                    self.von = self.von + delta
+                    self.bis = self.bis + delta
+                    w = self.von.isoweekday() if self.von.isoweekday()<7 else 0
+                print ("Recurrent record '%s' moved to %s" % (self.name, self.von))
+                sqlRun("UPDATE records SET rvon='%s', rbis='%s' WHERE rowid=%d" % (datetime.strftime(self.von,"%Y-%m-%d %H:%M:%S"), datetime.strftime(self.bis,"%Y-%m-%d %H:%M:%S"), self.id ) )
+
+    def run(self):
+        td = tDiff(self.von,datetime.now())
+        deltas = total(td)
+        self.timer = Timer(deltas, self.doRecord)
+        self.timer.start()
+        if deltas>0:
+            print ("Record: Thread timer for '%s' started for %d seconds" % (self.name, deltas))
+
+    def doRecord(self):
+        if config.cfg_switch_concurrent == "0":
+            for t in records:
+                if t.isRunning():
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (t.id, ))
+                    t.stop()
+        self.running = 1
+
+        streamtype = self.url.lower().split(':', 1)[0]
+        ffargs = config.cfg_ffmpeg_params
+        ffargs = ffargs.split()
+
+        dateholder = datetime.now().strftime("%Y%m%d%H%M%S")
+        titleholder = "".join([x if x.isalnum() else "_" for x in self.name])
+        if sys.version_info[0] < 3 and not (streamtype == "http" and config.cfg_switch_legacy == "1"):
+            # workaround for unicode, damn me if I ever get it working with 2.x
+            titleholder = "".join([x if ord(x) < 128 else "_" for x in titleholder])
+        idholder = "%04d" % (self.myrow[8], )
+
+        fulltitle = self.name
+        # remove/replace illegal chars
+        safetitle = re.sub(r"[\?\:\{\}]", "", fulltitle)
+        safetitle = re.sub(r"[\"]", "'", safetitle)
+        safetitle = re.sub(r"[\&]", " ", safetitle)
+        safetitle = re.sub(r"[\~\#\%\*\\\<\>\/\+\|]", "_", safetitle.rstrip())
+
+        fn = config.cfg_record_mask
+        # Placeholders
+        fn = fn.replace("%date%", dateholder).replace("%title%", titleholder)
+        fn = fn.replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+        fn = fn.replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+        fn = fn.replace("%year2%", datetime.now().strftime("%y"))
+        fn = fn.replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+        if "%fulltitle%" in fn and sys.version_info[0] == 2 and os.name == "nt":
+            print ("Usage of %fulltitle% is not possible on Python 2.7 and Windows. Please consider upgrading your Python.")
+            fn = fn.replace("%fulltitle%", titleholder)
+        else:
+            fn = fn.replace("%fulltitle%", safetitle)
+        # Placeholders end
+        for i in range(0, len(ffargs)):
+            ffargs[i] = ffargs[i].replace("%date%", dateholder).replace("%title%", titleholder)
+            ffargs[i] = ffargs[i].replace("%month%", datetime.now().strftime("%m")).replace("%year%", datetime.now().strftime("%Y")).replace("%day%", datetime.now().strftime("%d"))
+            ffargs[i] = ffargs[i].replace("%hour%", datetime.now().strftime("%H")).replace("%minute%", datetime.now().strftime("%M")).replace("%second%", datetime.now().strftime("%S"))
+            ffargs[i] = ffargs[i].replace("%year2%", datetime.now().strftime("%y"))
+            ffargs[i] = ffargs[i].replace("%channelid%", idholder).replace("%channel%", self.myrow[9])
+            ffargs[i] = ffargs[i].replace("%fulltitle%", fulltitle)
+
+        if "/" in fn or "\\" in fn:
+            try:
+                path = fn.replace('\\', "/")
+                pos = path.rfind("/")
+                path = path[:pos]
+                path = config.cfg_recordpath + path
+                os.makedirs (path)
+            except Exception as ex:
+                pass
+
+        fn = config.cfg_recordpath + fn
+        # Check, if destination file already exists
+        fn_check = fn + self.ext
+        num = 1
+        while fileexists(fn_check) and num<127:
+            fn_check = fn + ("_%s" % num) + self.ext
+            num += 1
+        fn = fn_check
+        # End check
+        if not ((streamtype == "http" or streamtype == "https") and config.cfg_switch_legacy == "1"):
+            delta = total(tDiff(self.bis, datetime.now()))
+            deltasec = '%d' % delta
+
+            try:
+                if config.cfg_ffmpeg_alternate_url != "":
+                    for t in records:
+                        if t.isRunning() == 1 and t.isFfmpeg() == 1:
+                            parser = urlparse.urlsplit(self.url)
+                            self.url = urlparse.urlunsplit([parser.scheme, config.cfg_ffmpeg_alternate_url, parser.path, parser.query, parser.fragment])
+                            print ("FFMPEG record already in progress, substituting URL...")
+                            self.ffmpeg = 2
+                            break
+            except:
+                pass
+
+            if self.ffmpeg == 0:
+                self.ffmpeg = 1
+
+            attr = shlex.split(config.cfg_ffmpeg_path) + ["-i", self.url, '-y', '-t', deltasec] + ffargs + [fn]
+            print ("FFMPEG (%s) record '%s' called with:" % (streamtype, self.name))
+            print (attr)
+            try:
+                if config.cfg_switch_proxy == "1" and config.cfg_proxy != "":
+                    os.environ["http_proxy"] = config.cfg_proxy
+                else:
+                    os.environ["http_proxy"] = ""
+                self.process = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                cleaner = Timer(delta+30, self.cleanProcess) # if ffmpeg won't exit, try to terminate its process in 30 seconds
+                cleaner.start()
+                out, err = self.process.communicate()
+                #self.process.wait() # oops... not needed? harmless!
+                cleaner.cancel()
+                if err:
+                    print ("FFMPEG record '%s' ended with an error:\n%s" % (self.name, err))
+                else:
+                    print ("FFMPEG record '%s' ended" % self.name)
+            except Exception as ex:
+                print ("FFMPEG could not be started. Error: %s" % (ex))
+        else:
+            block_sz = 8192
+            print ("Record: '%s' started using legacy method" % (self.name))
+            try:
+                if sys.version_info[0] == 3:
+                    req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                    u = urllib32.urlopen(req)
+                else:
+                    u = urllib32.urlopen(self.url)
+                try:
+                    f = open(fn, 'wb')
+                except:
+                    f = open(fn.encode('utf-8').decode(sys.getfilesystemencoding()), 'wb')
+            #except urllib32.URLError:
+            #    print ("Stream could not be parsed (URL=%s), aborting..." % (self.url))
+            except ValueError as ex:
+                print ("Unknown URL type (%s), record could not be started. Please check your channel settings" % (self.url))
+            except Exception as ex:
+                print ("Output file %s could not be created. Please check your settings. Description: %s" % (fn, ex))
+            else:
+                internalRetryCount = 0
+                maxRetryCount = 100
+                mybuffer = None
+                while self.bis > datetime.now() and self.stopflag==0:
+                    try:
+                        mybuffer = u.read(block_sz)
+                        doInternalRetry = False
+                    except:
+                        doInternalRetry = True
+                    if (not mybuffer or doInternalRetry) and internalRetryCount < maxRetryCount: # connection lost?
+                        internalRetryCount += 1
+                        try:
+                            if sys.version_info[0] == 3:
+                                req = urllib32.Request(self.url, data=None, headers={'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/35.0.1916.47 Safari/537.36'})
+                                u = urllib32.urlopen(req)
+                            else:
+                                u = urllib32.urlopen(self.url)
+                            mybuffer = u.read(block_sz)
+                            f.write(mybuffer)
+                        except:
+                            pass
+                    elif internalRetryCount >= maxRetryCount:
+                        print ("Record: '%s': too many internal retries, aborting..." % (self.name))
+                        break
+                    else:
+                        f.write(mybuffer)
+
+                f.close()
+                if internalRetryCount > 0:
+                    print ("Record: '%s' ended with %s internal retries, please check your connection stability" % (self.name, internalRetryCount))
+                else:
+                    print ("Record: '%s' ended" % (self.name))
+
+        if config.cfg_switch_postprocess == "1" and config.cfg_postprocess != "":
+            if fileexists(fn):
+                attr = []
+                attr = shlex.split(config.cfg_postprocess)
+                for i in range(0, len(attr)):
+                    attr[i] = attr[i].replace("%file%", fn)
+                print ("Postprocessing will be called with following parameters:")
+                print (attr)
+                try:
+                    postprocess = subprocess.Popen(attr, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    out, err = postprocess.communicate()
+                except:
+                    print ("Exception calling postprocessing, please check your command line")
+
+        # 2015-01-21 Fail & recurrency check
+        if self.stopflag==0:
+            delta = total(tDiff(self.bis, datetime.now()))
+            failsafe_delta=int(config.cfg_failsafe_delta)
+            if delta > failsafe_delta:
+                if self.retry_count == 0:
+                    print ("Something went wrong with '%s'. No retries configured, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries == self.retry_count:
+                    print ("Something went wrong with '%s'. Last retry reached, aborting..." % (self.name))
+                    sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                    sleep(delta)
+                elif self.retries < self.retry_count:
+                    self.retries += 1
+                    print ("Something went wrong with '%s', retry %s/%s in 10 seconds" % (self.name, self.retries, self.retry_count))
+                    sleep(10)
+                    if self.stopflag==0:
+                        self.run()
+                    else:
+                        print ("Retrying cancelled due to a stopflag")
+                    return
+            elif delta > 0:
+                print ("Something went wrong with '%s'. Remaining time is less than fail-safe delta, sleeping..." % (self.name))
+                #sqlRun("UPDATE records SET renabled=0 WHERE rowid=?", (self.id, ))
+                sleep(delta)
+
+        self.clean()
+        rectimer = Timer(10, setRecords)
+        rectimer.start()
+
+    def stop(self):
+        if self.running==0:
+            self.timer.cancel()
+        self.stopflag = 1
+        if not self.process==None:
+            if self.process.poll()==None:
+                self.process.terminate()
+        self.clean()
+        print ("Record: Stopflag for '%s' received" % (self.name))
+
+    def clean(self):
+        self.running = 0
+        if self in records: records.remove(self)
+
+    def cleanProcess(self):
+        try:
+            if not self.process==None:
+                self.process.terminate()
+            sleep(3)
+            if not self.process==None:
+                self.process.kill()
+                print ("FFMPEG Record '%s' had to be killed. R.I.P." % self.name)
+            else:
+                print ("FFMPEG Record '%s' had to be terminated." % self.name)
+        except:
+            print ("FFMPEG Record '%s' termination error, process might be running" % self.name)
+        if not self.process==None:
+            print ("FFMPEG Record '%s': termination may have failed" % self.name)
+        self.running = 0
+
+    def isFfmpeg(self):
+        return self.ffmpeg
+
+    def isRunning(self):
+        return self.running
+
+def setRecords():
+    if shutdown:
+        return
+    rows=sqlRun("SELECT records.rowid, cpath, rvon, rbis, cname, records.recname, records.rmask, channels.cext, channels.cid, channels.cname FROM channels, records where channels.cid=records.cid AND (datetime(rbis)>=datetime('now', 'localtime') OR rmask>0) AND renabled = 1 ORDER BY datetime(rvon)")
+    for row in rows:
+        chk = False
+        for t in records:
+            if t.id == row[0]:
+                if t.myrow[1]!=row[1] or t.myrow[2]!=row[2] or t.myrow[3]!=row[3] or t.myrow[4]!=row[4] or t.myrow[5]!=row[5]  or t.myrow[6]!=row[6]  or t.myrow[7]!=row[7]:
+                    t.stop()
+                    chk = False
+                else:
+                    chk = True
+                break
+        if chk == False:
+            thread = record(row)
+            thread.start()
+            records.append(thread)
+
+    for i in range(len(records)-1,-1,-1):
+        t = records[i]
+        chk = False
+        for row in rows:
+            if t.id == row[0]:
+                chk = True
+                break
+        if chk == False:
+            t.stop()
+
+#------------------------------- Database switching ----------------------------
+
+def checkDb(default = "settings.db"):
+    dbpath = readDbFile()
+    if dbpath != "" and dbpath != "settings.db":
+        if not fileexists(dbpath) and fileexists(default):
+            print ("Portable configuration at '%s' not found, default db '%s' will be copied" % (dbpath, default))
+            try:
+                shutil.copyfile(default, dbpath)
+            except:
+                print ("Portable database could not be copied, please check your settings and permissions")
+        if not fileexists(dbpath):
+            print ("Attempt to initialize a new database")
+            setDb(dbpath)
+            sqlCreateAll(version)
+        if not fileexists(dbpath):
+            print ("Portable database creation has failed, use default db '%s' instead" % default)
+            setDb(default)
+            writeDbFile(default)
+        else:
+            print("Using portable database at '%s'" % dbpath)
+            setDb(dbpath)
+    return dbpath
+
+def readDbFile():
+    ret = "settings.db"
+    if fileexists("db.ini"):
+        file = open("db.ini", "r")
+        ret = file.readline().rstrip()
+        file.close()
+    return ret
+
+def writeDbFile(path):
+    file = open("db.ini", "w")
+    file.write(path + "\n")
+    file.close()
+
+#------------------------------- Sync thread ----------------------------------
+parse_list_timer = None
+
+def channel_sync_start():
+    global parse_list_timer
+    timer_timeout = int(config.cfg_m3u_timer)
+    if timer_timeout > 0 and not config.cfg_m3u_path == "":
+        print ("Starting channel import thread for every %s minutes" % (timer_timeout))
+        parse_list_timer = Parse_list_timer(timer_timeout * 60)
+        parse_list_timer.start()
+        
+def channel_sync_end():
+    global parse_list_timer
+    if parse_list_timer:
+        parse_list_timer.stop()
+
+#------------------------------- Main loop -------------------------------------
+
+print ("Initializing database... ")
+checkDb()
+sqlCreateAll(version)
+purgeDB()
+print ("Initializing config...")
+config.loadConfig()
+credentials = config.getUser()
+print ("Checking internationalization...")
+checkLang()
+print ("Initializing records...")
+setRecords()
+print ("Initializing EPG import thread...")
+grabthread = epggrabthread()
+grabthread.run()
+channel_sync_start()
+
+print ("Starting server on: %s:%s" % (config.cfg_server_bind_address, config.cfg_server_port))
+try:
+    import bottle
+    bottle.TEMPLATE_PATH.insert(0, 'views')
+    run(host=config.cfg_server_bind_address, port=config.cfg_server_port, server="wsgiref", quiet=True)
+except Exception as ex:
+    print ("Server exception or shutdown (%s)" % ex)
+    pass
+#    print ("Server exception. Default network settings will be used this time. Please log in using port 8030 and check your network settings.")
+#    print ("Starting server on: 0.0.0.0:8030")
+#    run(host="0.0.0.0", port=8030, server="wsgiref", quiet=True)
+
+# Server is shutting down, all threads should be eliminated
+shutdown = True
+print ("Server aborted. Stopping all records before exiting...")
+while len(records)>0:
+    records[0].stop()
+
+print ("Stopping EPG grab thread...")
+grabthread.kill()
+channel_sync_end()
+
+print ("tvstreamrecord v.%s: bye-bye" % version)
+logStop()
+, filter_to):
+            filter_to = "23:59"
+        filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ? " + (", '+1 day')" if filter_to <= filter_from else ")") + " AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
+        filter_params = (filter_date, filter_to, filter_date, filter_from)
+    else:
+        filter_mode = "now"
+        filter_sql = " AND datetime(guide.g_start)<=datetime('now', 'localtime') AND datetime(guide.g_stop)>datetime('now', 'localtime')"
     if sEcho: # Server-side processing
         columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
         sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
