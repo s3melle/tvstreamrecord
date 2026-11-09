@@ -974,7 +974,7 @@ def epglist_getter():
     for row in rows:
         rating_score = None
         if row[10]:
-            rating_match = re.search(r'(\\d+(?:[.,]\\d+)?)', str(row[10]))
+            rating_match = re.search(r'([0-9]+(?:[.,][0-9]+)?)', str(row[10]))
             if rating_match:
                 try:
                     rating_score = float(rating_match.group(1).replace(',', '.'))
