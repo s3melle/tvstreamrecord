@@ -920,7 +920,23 @@ def epglist_getter():
         filter_date = request.query.get('filter_date', datetime.now().strftime("%Y-%m-%d"))
         filter_from = request.query.get('filter_from', '00:00')
         filter_to = request.query.get('filter_to', '23:59')
-        if not re.match(r'^\\d{4}-\\d{2}-\\d{2}
+        try:
+            datetime.strptime(filter_date, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            filter_date = datetime.now().strftime("%Y-%m-%d")
+        try:
+            datetime.strptime(filter_from, "%H:%M")
+        except (TypeError, ValueError):
+            filter_from = "00:00"
+        try:
+            datetime.strptime(filter_to, "%H:%M")
+        except (TypeError, ValueError):
+            filter_to = "23:59"
+        if filter_to <= filter_from:
+            filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ?, '+1 day') AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
+        else:
+            filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ?) AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
+        filter_params = (filter_date, filter_to, filter_date, filter_from)
         columns = ['guide_chan.g_name', 'guide.g_title', "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)", 'guide.g_desc', 'guide.g_start', 'guide.g_stop', None]
         sLimit = "LIMIT %s OFFSET %s" % (request.query.iDisplayLength, request.query.iDisplayStart)
         iSortingCols = int(request.query.iSortingCols)
