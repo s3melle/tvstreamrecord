@@ -1181,6 +1181,45 @@ $(function() {
     } else if (here("epglist")) {
 // ------------------------------------ EPG list tab only
         var serverSide = ($("#listmode").attr("value") == "1");
+        var epgListFilterMode = "now";
+        var epgListDate = new Date();
+        var epgListDateString = $.datepicker.formatDate("yy-mm-dd", epgListDate);
+
+        $("#epg_filter_now, #epg_filter_custom, #epg_filter_tomorrow").button();
+        $("#epg_filter_date").datepicker({
+            dateFormat: "yy-mm-dd",
+            onSelect: function() {
+                epgListDateString = $(this).val();
+                $('#table_epglist').DataTable().ajax.reload();
+            }
+        }).val(epgListDateString);
+        $("#epg_filter_from, #epg_filter_to").timepicker({
+            constrainInput: true,
+            showPeriodLabels: false,
+            timeFormat: "HH:mm"
+        });
+
+        function setEpgListFilter(mode) {
+            epgListFilterMode = mode;
+            $("#epg_custom_range").css("display", mode === "custom" ? "inline-flex" : "none");
+            $("#epg_filter_now, #epg_filter_custom, #epg_filter_tomorrow").removeClass("ui-state-active");
+            $("#epg_filter_" + (mode === "now" ? "now" : mode === "tomorrow" ? "tomorrow" : "custom")).addClass("ui-state-active");
+            $('#table_epglist').DataTable().ajax.reload();
+        }
+        $("#epg_filter_now").on("click", function() { setEpgListFilter("now"); });
+        $("#epg_filter_tomorrow").on("click", function() {
+            var tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            epgListDateString = $.datepicker.formatDate("yy-mm-dd", tomorrow);
+            $("#epg_filter_date").val(epgListDateString);
+            setEpgListFilter("tomorrow");
+        });
+        $("#epg_filter_custom").on("click", function() {
+            setEpgListFilter("custom");
+        });
+        $("#epg_filter_from, #epg_filter_to").on("change", function() {
+            if (epgListFilterMode === "custom") $('#table_epglist').DataTable().ajax.reload();
+        });
 
         $('#table_epglist').dataTable({
             "oLanguage": {"sUrl": "lang/dataTables." + language+ ".json"},
@@ -1191,6 +1230,10 @@ $(function() {
             "sAjaxSource": "/epglist_getter",
             "fnServerParams": function(aoData) {
                 aoData.push({"name": "group", "value": $("#epg_group_filter").val() || ""});
+                aoData.push({"name": "filter_mode", "value": epgListFilterMode});
+                aoData.push({"name": "filter_date", "value": $("#epg_filter_date").val() || epgListDateString});
+                aoData.push({"name": "filter_from", "value": $("#epg_filter_from").val() || "00:00"});
+                aoData.push({"name": "filter_to", "value": $("#epg_filter_to").val() || "23:59"});
             },
             "fnDrawCallback": function( oSettings ) {
                 initIcons();
@@ -1222,7 +1265,7 @@ $(function() {
                 return oData;
             },
             "fnRowCallback": function( nRow, aData, iDisplayIndex ) {
-                var poster = aData[9] ? '<img src="' + epgHtmlEscape(aData[9]) + '" alt="" style="max-width:42px;max-height:58px;vertical-align:middle;margin-right:6px;" />' : "";
+                var poster = aData[9] ? '<img src="' + epgHtmlEscape(aData[9]) + '" alt="" class="epg-list-poster" />' : "";
                 var rating = aData[10] ? '<span style="white-space:nowrap;font-weight:bold;">★ ' + epgHtmlEscape(aData[10]) + '</span>' : "";
                 $('td:eq(1)', nRow).html(poster + epgHtmlEscape(aData[1]));
                 $('td:eq(2)', nRow).html(rating);
