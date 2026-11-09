@@ -332,3 +332,32 @@ div#users-contain table th { font-weight: bold; }
     z-index: 2;
 }
 #table_epglist .epg-column-resizer:hover { background: rgba(100, 100, 100, 0.25); }
+
+
+/* EPG list: larger programme posters and time filters */
+#epg_list_filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+#epg_list_filters label {
+    display: inline;
+    clear: none;
+    margin: 0;
+}
+#epg_custom_range {
+    align-items: center;
+    gap: 5px;
+}
+#epg_list_filters input {
+    margin: 0;
+}
+#table_epglist img.epg-list-poster {
+    max-width: 84px;
+    max-height: 116px;
+    width: auto;
+    height: auto;
+    vertical-align: middle;
+    margin-right: 8px;
+}
