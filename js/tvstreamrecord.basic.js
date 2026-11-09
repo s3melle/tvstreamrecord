@@ -1186,6 +1186,7 @@ $(function() {
         var epgListDateString = $.datepicker.formatDate("yy-mm-dd", epgListDate);
 
         $("#epg_filter_now, #epg_filter_custom, #epg_filter_tomorrow").button();
+        $("#epg_filter_now").addClass("ui-state-active");
         $("#epg_filter_date").datepicker({
             dateFormat: "yy-mm-dd",
             onSelect: function() {
