@@ -4,7 +4,18 @@
 <div id="delta_after_epg" delta="{{deltaa}}"></div>
     <div id="listmode" value="{{listmode}}"></div>
 <div id="users-contain" class="ui-widget">
-    <div style="margin:8px 0;">
+    <div id="epg_list_filters" style="margin:8px 0; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+        <button type="button" id="epg_filter_now">En ce moment</button>
+        <button type="button" id="epg_filter_custom">Date et plage horaire</button>
+        <button type="button" id="epg_filter_tomorrow">Demain</button>
+        <span id="epg_custom_range" style="display:none; align-items:center; gap:5px;">
+            <label for="epg_filter_date">Date :</label>
+            <input type="text" id="epg_filter_date" style="width:105px;" />
+            <label for="epg_filter_from">De :</label>
+            <input type="text" id="epg_filter_from" value="00:00" style="width:65px;" />
+            <label for="epg_filter_to">à :</label>
+            <input type="text" id="epg_filter_to" value="23:59" style="width:65px;" />
+        </span>
         <label for="epg_group_filter">Groupe M3U :</label>
         <select id="epg_group_filter" class="text ui-widget-content ui-corner-all">
             <option value="">Tous les groupes</option>
