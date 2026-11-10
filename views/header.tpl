@@ -11,7 +11,7 @@
     <link rel="stylesheet" type="text/css" href="css/select.jqueryui.min.css"/>
     <link rel="stylesheet" type="text/css" href="css/jqueryFileTree.css" />
     <link rel="stylesheet" type="text/css" href="css/slickswitch.css" />
-    <link rel="stylesheet" type="text/css" href="css/tvstreamrecord.basic.css" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="css/tvstreamrecord.basic.css?v=143" type="text/css" />
 
     <script type="text/javascript" src="js/jquery-3.5.1.min.js"></script>
     <script type="text/javascript" src="js/jquery-ui.min.js"></script>
@@ -24,7 +24,7 @@
     <script type="text/javascript" src="js/i18n/jquery.ui.datepicker-{{locale}}.js"></script>	
 %end
     <script type="text/javascript" src="js/jqueryFileTree.js"></script>
-    <script type="text/javascript" src="js/tvstreamrecord.basic.js?v=142"></script>
+    <script type="text/javascript" src="js/tvstreamrecord.basic.js?v=143"></script>
     <script type="text/javascript" src="js/preloader.js"></script>
 </head><BODY>
 <div id="datepicker_local" style="display: none;"></div>
