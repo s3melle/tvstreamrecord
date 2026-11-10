@@ -272,7 +272,8 @@ def getProg(strp, channellist=[], keylist=[], progress_callback=None):
     sqlRun("""
         INSERT INTO guide (g_id, g_title, g_start, g_stop, g_desc, g_icon, g_rating)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(g_id, g_start, g_stop) DO UPDATE SET
+        ON CONFLICT(g_id, g_start) DO UPDATE SET
+            g_stop = excluded.g_stop,
             g_title = excluded.g_title,
             g_desc = excluded.g_desc,
             g_icon = CASE
