@@ -946,8 +946,17 @@ def epglist_getter():
             rating_min = max(0.0, min(10.0, rating_min))
         except (TypeError, ValueError, AttributeError):
             rating_min = 6.0
-        rating_sql = "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)"
-        filter_sql += " AND guide.g_rating IS NOT NULL AND TRIM(guide.g_rating)<>'' AND %s>=?" % rating_sql
+        # Keep only real IMDb-style ratings such as 7/10 or 7.2/10.
+        # Ignore missing values, plain age labels (15+ / 15), and other text.
+        rating_text_sql = "TRIM(guide.g_rating)"
+        rating_prefix_sql = "SUBSTR(%s, 1, LENGTH(%s) - 3)" % (rating_text_sql, rating_text_sql)
+        rating_digits_sql = "REPLACE(REPLACE(%s, '.', ''), ',', '')" % rating_prefix_sql
+        rating_value_sql = "CAST(REPLACE(%s, ',', '.') AS REAL)" % rating_prefix_sql
+        filter_sql += (
+            " AND %s LIKE '%%/10' AND LENGTH(%s)>0"
+            " AND %s NOT GLOB '*[^0-9]*'"
+            " AND %s BETWEEN ? AND 10"
+        ) % (rating_text_sql, rating_prefix_sql, rating_digits_sql, rating_value_sql)
         filter_params += (rating_min,)
 
     selected_group = request.query.group
