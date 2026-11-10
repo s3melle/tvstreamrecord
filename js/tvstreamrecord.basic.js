@@ -293,7 +293,15 @@ function post(dest1, data1, rel) {
                 window.location.reload(false);
             } else if (rel==2) {
                 oTable = $('table:visible').DataTable();
-                oTable.ajax.reload();
+                if (here("epglist")) {
+                    // Keep the current EPG page and the user's scroll position after validation.
+                    var epgScrollTop = window.pageYOffset || document.documentElement.scrollTop;
+                    oTable.ajax.reload(function() {
+                        window.scrollTo(0, epgScrollTop);
+                    }, false);
+                } else {
+                    oTable.ajax.reload();
+                }
             }
         }
     });
@@ -1218,6 +1226,11 @@ $(function() {
         $("#epg_rating_min").on("change", reloadEpgList);
         $("#epg_filter_from, #epg_filter_to").on("change", reloadEpgList);
         updateEpgFilterControls();
+
+        // A pagination change should bring the EPG table back to the top of the page.
+        $('#table_epglist').on('page.dt', function() {
+            $('html, body').stop(true).animate({scrollTop: 0}, 200);
+        });
 
         $('#table_epglist').dataTable({
             "oLanguage": {"sUrl": "lang/dataTables." + language+ ".json"},
