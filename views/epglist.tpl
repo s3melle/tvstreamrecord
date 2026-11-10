@@ -5,10 +5,11 @@
     <div id="listmode" value="{{listmode}}"></div>
 <div id="users-contain" class="ui-widget">
     <div id="epg_list_filters" style="margin:8px 0; display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
-        <button type="button" id="epg_filter_now">En ce moment</button>
-        <button type="button" id="epg_filter_custom">Date et plage horaire</button>
-        <button type="button" id="epg_filter_tomorrow">Demain</button>
-        <span id="epg_custom_range" style="display:none; align-items:center; gap:5px;">
+        <label class="epg-filter-toggle" for="epg_time_filter_enabled">
+            <input type="checkbox" id="epg_time_filter_enabled" checked="checked" />
+            Filtrer par date et plage horaire
+        </label>
+        <span id="epg_custom_range" style="display:inline-flex; align-items:center; gap:5px;">
             <label for="epg_filter_date">Date :</label>
             <input type="text" id="epg_filter_date" style="width:105px;" />
             <label for="epg_filter_from">De :</label>
@@ -16,6 +17,12 @@
             <label for="epg_filter_to">à :</label>
             <input type="text" id="epg_filter_to" value="23:59" style="width:65px;" />
         </span>
+        <label class="epg-filter-toggle" for="epg_rating_filter_enabled">
+            <input type="checkbox" id="epg_rating_filter_enabled" checked="checked" />
+            IMDb minimum :
+        </label>
+        <input type="number" id="epg_rating_min" min="0" max="10" step="0.1" value="6" style="width:58px;" />
+        <span>/10</span>
         <label for="epg_group_filter">Groupe M3U :</label>
         <select id="epg_group_filter" class="text ui-widget-content ui-corner-all">
             <option value="">Tous les groupes</option>
