@@ -1181,12 +1181,9 @@ $(function() {
     } else if (here("epglist")) {
 // ------------------------------------ EPG list tab only
         var serverSide = ($("#listmode").attr("value") == "1");
-        var epgListFilterMode = "now";
         var epgListDate = new Date();
         var epgListDateString = $.datepicker.formatDate("yy-mm-dd", epgListDate);
 
-        $("#epg_filter_now, #epg_filter_custom, #epg_filter_tomorrow").button();
-        $("#epg_filter_now").addClass("ui-state-active");
         $("#epg_filter_date").datepicker({
             dateFormat: "yy-mm-dd",
             onSelect: function() {
@@ -1200,27 +1197,22 @@ $(function() {
             timeFormat: "HH:mm"
         });
 
-        function setEpgListFilter(mode) {
-            epgListFilterMode = mode;
-            $("#epg_custom_range").css("display", mode === "custom" ? "inline-flex" : "none");
-            $("#epg_filter_now, #epg_filter_custom, #epg_filter_tomorrow").removeClass("ui-state-active");
-            $("#epg_filter_" + (mode === "now" ? "now" : mode === "tomorrow" ? "tomorrow" : "custom")).addClass("ui-state-active");
+        function reloadEpgList() {
             $('#table_epglist').DataTable().ajax.reload();
         }
-        $("#epg_filter_now").on("click", function() { setEpgListFilter("now"); });
-        $("#epg_filter_tomorrow").on("click", function() {
-            var tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            epgListDateString = $.datepicker.formatDate("yy-mm-dd", tomorrow);
-            $("#epg_filter_date").val(epgListDateString);
-            setEpgListFilter("tomorrow");
+        function updateEpgFilterControls() {
+            var dateEnabled = $("#epg_time_filter_enabled").is(":checked");
+            $("#epg_custom_range").toggle(dateEnabled);
+            $("#epg_filter_date, #epg_filter_from, #epg_filter_to").prop("disabled", !dateEnabled);
+            $("#epg_rating_min").prop("disabled", !$("#epg_rating_filter_enabled").is(":checked"));
+        }
+        $("#epg_time_filter_enabled, #epg_rating_filter_enabled").on("change", function() {
+            updateEpgFilterControls();
+            reloadEpgList();
         });
-        $("#epg_filter_custom").on("click", function() {
-            setEpgListFilter("custom");
-        });
-        $("#epg_filter_from, #epg_filter_to").on("change", function() {
-            if (epgListFilterMode === "custom") $('#table_epglist').DataTable().ajax.reload();
-        });
+        $("#epg_rating_min").on("change", reloadEpgList);
+        $("#epg_filter_from, #epg_filter_to").on("change", reloadEpgList);
+        updateEpgFilterControls();
 
         $('#table_epglist').dataTable({
             "oLanguage": {"sUrl": "lang/dataTables." + language+ ".json"},
@@ -1231,10 +1223,12 @@ $(function() {
             "sAjaxSource": "/epglist_getter",
             "fnServerParams": function(aoData) {
                 aoData.push({"name": "group", "value": $("#epg_group_filter").val() || ""});
-                aoData.push({"name": "filter_mode", "value": epgListFilterMode});
+                aoData.push({"name": "date_filter_enabled", "value": $("#epg_time_filter_enabled").is(":checked") ? "1" : "0"});
                 aoData.push({"name": "filter_date", "value": $("#epg_filter_date").val() || epgListDateString});
                 aoData.push({"name": "filter_from", "value": $("#epg_filter_from").val() || "00:00"});
                 aoData.push({"name": "filter_to", "value": $("#epg_filter_to").val() || "23:59"});
+                aoData.push({"name": "rating_filter_enabled", "value": $("#epg_rating_filter_enabled").is(":checked") ? "1" : "0"});
+                aoData.push({"name": "rating_min", "value": $("#epg_rating_min").val() || "6"});
             },
             "fnDrawCallback": function( oSettings ) {
                 initIcons();
@@ -1258,11 +1252,14 @@ $(function() {
                 localStorage.setItem( 'DataTables_'+where(), JSON.stringify(oData) );
             },
             "stateLoadCallback": function (oSettings) {
-                var oData = JSON.parse( localStorage.getItem('DataTables_'+where()) );
+                var savedState = localStorage.getItem('DataTables_'+where());
+                var oData = savedState ? JSON.parse(savedState) : null;
                 var keyword_for_epg = $('#keyword_for_epg').attr('keyword_for_epg');
-                if ( keyword_for_epg != '' ) {
-                    oData.search.search=keyword_for_epg;
-                }                
+                if (keyword_for_epg != '') {
+                    if (!oData) oData = {};
+                    if (!oData.search) oData.search = {};
+                    oData.search.search = keyword_for_epg;
+                }
                 return oData;
             },
             "fnRowCallback": function( nRow, aData, iDisplayIndex ) {
