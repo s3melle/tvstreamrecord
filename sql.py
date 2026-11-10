@@ -79,6 +79,7 @@ def sqlCreateAll(version):
         sql += 'CREATE TABLE IF NOT EXISTS caching (crTime TEXT, url TEXT, Last_Modified TEXT, ETag TEXT);'
         sql += 'CREATE TABLE IF NOT EXISTS guide_chan (g_id TEXT UNIQUE, g_name TEXT collate nocase UNIQUE, g_lasttime TEXT);'
         sql += 'CREATE TABLE IF NOT EXISTS guide (g_id TEXT, g_title TEXT, g_start TEXT, g_stop TEXT, g_desc TEXT, g_icon TEXT, g_rating TEXT, PRIMARY KEY (g_id, g_start, g_stop));'
+        sql += 'CREATE UNIQUE INDEX IF NOT EXISTS idx_guide_channel_start ON guide (g_id, g_start);'
         sql += 'CREATE TABLE IF NOT EXISTS config (param TEXT UNIQUE, desc TEXT, value TEXT);'
         sql += 'CREATE TABLE IF NOT EXISTS blacklist (ip TEXT UNIQUE, trycount INTEGER, lasttry TEXT);'
         sql += "INSERT OR REPLACE INTO config VALUES ('cfg_version', 'Program version', '%s');" % version
@@ -145,6 +146,13 @@ def sqlCreateAll(version):
                 if oldver < '1.6.8':
                     # Re-read XMLTV source files so existing programmes receive poster/rating metadata.
                     sql += "UPDATE guide_chan SET g_lasttime='1970-01-01 00:00:00';"
+
+                if oldver < '1.6.9':
+                    # Keep one EPG programme per channel/start, retaining existing poster/rating data.
+                    sql += "UPDATE guide SET g_icon=COALESCE(NULLIF(g_icon, ''), (SELECT g_icon FROM guide AS dup WHERE dup.g_id=guide.g_id AND dup.g_start=guide.g_start AND dup.g_icon IS NOT NULL AND dup.g_icon<>'' ORDER BY dup.rowid DESC LIMIT 1)) WHERE rowid IN (SELECT MAX(rowid) FROM guide GROUP BY g_id, g_start);"
+                    sql += "UPDATE guide SET g_rating=COALESCE(NULLIF(g_rating, ''), (SELECT g_rating FROM guide AS dup WHERE dup.g_id=guide.g_id AND dup.g_start=guide.g_start AND dup.g_rating IS NOT NULL AND dup.g_rating<>'' ORDER BY dup.rowid DESC LIMIT 1)) WHERE rowid IN (SELECT MAX(rowid) FROM guide GROUP BY g_id, g_start);"
+                    sql += "DELETE FROM guide WHERE rowid NOT IN (SELECT MAX(rowid) FROM guide GROUP BY g_id, g_start);"
+                    sql += "CREATE UNIQUE INDEX IF NOT EXISTS idx_guide_channel_start ON guide (g_id, g_start);"
 
                 if oldver > version:
                     print ("Critical error: Version mismatch!!!")
