@@ -320,7 +320,10 @@ function paintTable() {
 function makeEpgColumnsResizable() {
     var table = $('#table_epglist');
     if (!table.length) return;
-    var storageKey = 'tvstreamrecord_epglist_column_widths';
+    // Versioned storage key: apply the new defaults once, while retaining
+    // any widths the user subsequently chooses by resizing columns.
+    var storageKey = 'tvstreamrecord_epglist_column_widths_v2';
+    var defaultWidths = [100, 300, 55, 350, 100, 100, 70];
     var widths = {};
     try { widths = JSON.parse(localStorage.getItem(storageKey) || '{}') || {}; }
     catch (e) { widths = {}; }
@@ -328,10 +331,11 @@ function makeEpgColumnsResizable() {
     table.find('thead th').each(function(index) {
         var th = $(this);
         var savedWidth = parseInt(widths[index], 10);
-        if (savedWidth > 40) {
-            th.css('width', savedWidth + 'px');
+        var columnWidth = savedWidth > 40 ? savedWidth : defaultWidths[index];
+        if (columnWidth) {
+            th.css('width', columnWidth + 'px');
             table.find('tbody tr').each(function() {
-                $(this).children('td').eq(index).css('width', savedWidth + 'px');
+                $(this).children('td').eq(index).css('width', columnWidth + 'px');
             });
         }
         if (th.children('.epg-column-resizer').length) return;
