@@ -361,3 +361,17 @@ div#users-contain table th { font-weight: bold; }
     vertical-align: middle;
     margin-right: 8px;
 }
+
+/* EPG list filter controls */
+#epg_list_filters .epg-filter-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+}
+#epg_list_filters .epg-filter-toggle input {
+    margin: 0;
+}
+#epg_list_filters input:disabled {
+    opacity: 0.5;
+}
