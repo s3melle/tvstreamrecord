@@ -910,14 +910,12 @@ def epglist_getter():
     retlist = []
     totalrows = 0
 
-    filter_mode = request.query.get('filter_mode', 'now')
     filter_sql = ""
     filter_params = ()
-    if filter_mode == "now":
-        filter_sql = " AND datetime(guide.g_start)<=datetime('now', 'localtime') AND datetime(guide.g_stop)>datetime('now', 'localtime')"
-    elif filter_mode == "tomorrow":
-        filter_sql = " AND datetime(guide.g_start)<datetime(date('now', 'localtime', '+2 day')) AND datetime(guide.g_stop)>datetime(date('now', 'localtime', '+1 day'))"
-    elif filter_mode == "custom":
+
+    # Optional date/time window. When disabled, the EPG is not restricted by date.
+    date_filter_enabled = request.query.get('date_filter_enabled', '1') != '0'
+    if date_filter_enabled:
         filter_date = request.query.get('filter_date', datetime.now().strftime("%Y-%m-%d"))
         filter_from = request.query.get('filter_from', '00:00')
         filter_to = request.query.get('filter_to', '23:59')
@@ -933,13 +931,24 @@ def epglist_getter():
             datetime.strptime(filter_to, "%H:%M")
         except (TypeError, ValueError):
             filter_to = "23:59"
+
         if filter_to <= filter_from:
-            filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ?, '+1 day') AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
+            filter_sql += " AND datetime(guide.g_start)<datetime(? || ' ' || ?, '+1 day') AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
         else:
-            filter_sql = " AND datetime(guide.g_start)<datetime(? || ' ' || ?) AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
-        filter_params = (filter_date, filter_to, filter_date, filter_from)
-    else:
-        filter_sql = " AND datetime(guide.g_start)<=datetime('now', 'localtime') AND datetime(guide.g_stop)>datetime('now', 'localtime')"
+            filter_sql += " AND datetime(guide.g_start)<datetime(? || ' ' || ?) AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
+        filter_params += (filter_date, filter_to, filter_date, filter_from)
+
+    # Optional IMDb minimum score (enabled by default at 6/10).
+    rating_filter_enabled = request.query.get('rating_filter_enabled', '1') != '0'
+    if rating_filter_enabled:
+        try:
+            rating_min = float(request.query.get('rating_min', '6').replace(',', '.'))
+            rating_min = max(0.0, min(10.0, rating_min))
+        except (TypeError, ValueError, AttributeError):
+            rating_min = 6.0
+        rating_sql = "CAST(REPLACE(REPLACE(guide.g_rating, '/10', ''), ',', '.') AS REAL)"
+        filter_sql += " AND guide.g_rating IS NOT NULL AND TRIM(guide.g_rating)<>'' AND %s>=?" % rating_sql
+        filter_params += (rating_min,)
 
     selected_group = request.query.group
     group_sql = " AND EXISTS (SELECT 1 FROM channel_groups cg WHERE cg.cid=channels.cid AND cg.group_name=?)" if selected_group else ""
