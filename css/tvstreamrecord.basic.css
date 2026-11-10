@@ -354,8 +354,8 @@ div#users-contain table th { font-weight: bold; }
     margin: 0;
 }
 #table_epglist img.epg-list-poster {
-    max-width: 84px;
-    max-height: 116px;
+    max-width: 126px;
+    max-height: 174px;
     width: auto;
     height: auto;
     vertical-align: middle;
