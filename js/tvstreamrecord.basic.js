@@ -362,6 +362,11 @@ var epgButtonLabel = "";
  * Function for initializing EPG grab button
  * @return none
  */
+function epgListDateTime(sqldatetime) {
+    if (!sqldatetime) return '';
+    return sqldatetime.substr(0, 10).replace(/-/g, '/') + ' ' + sqldatetime.substr(11, 5);
+}
+
 function epgHtmlEscape(value) {
     return $('<div/>').text(value == null ? '' : String(value)).html();
 }
@@ -1267,8 +1272,8 @@ $(function() {
                 var rating = aData[10] ? '<span style="white-space:nowrap;font-weight:bold;">★ ' + epgHtmlEscape(aData[10]) + '</span>' : "";
                 $('td:eq(1)', nRow).html(poster + epgHtmlEscape(aData[1]));
                 $('td:eq(2)', nRow).html(rating);
-                $('td:eq(4)', nRow).html( localDateTime( aData[3] ) );
-                $('td:eq(5)', nRow).html( localDateTime( aData[4] ) );
+                $('td:eq(4)', nRow).html( epgListDateTime( aData[3] ) );
+                $('td:eq(5)', nRow).html( epgListDateTime( aData[4] ) );
                 if (aData[7]===null) { 
                     $('td:eq(6)', nRow).html('<label title="Create record" id="iconsERec-' + aData[6] + '" class="ui-state-default ui-corner-all"><span class="ui-icon ui-icon-play"></span></label>');
                 } else {
