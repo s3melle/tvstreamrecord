@@ -1201,6 +1201,7 @@ $(function() {
         var epgParams = new URLSearchParams(window.location.search);
         var epgListDate = new Date();
         var epgListDateString = epgParams.get("filter_date") || $.datepicker.formatDate("yy-mm-dd", epgListDate);
+        var epgListEndDateString = epgParams.get("filter_date_end") || epgListDateString;
 
         // Restore the EPG filters when navigating between M3U groups.
         $("#epg_time_filter_enabled").prop("checked", epgParams.get("date_filter_enabled") !== "0");
@@ -1209,13 +1210,16 @@ $(function() {
         $("#epg_rating_filter_enabled").prop("checked", epgParams.get("rating_filter_enabled") !== "0");
         $("#epg_rating_min").val(epgParams.get("rating_min") || "6");
 
-        $("#epg_filter_date").datepicker({
+        $("#epg_filter_date, #epg_filter_date_end").datepicker({
             dateFormat: "yy-mm-dd",
             onSelect: function() {
-                epgListDateString = $(this).val();
+                epgListDateString = $("#epg_filter_date").val();
+                epgListEndDateString = $("#epg_filter_date_end").val();
                 $('#table_epglist').DataTable().ajax.reload();
             }
-        }).val(epgListDateString);
+        });
+        $("#epg_filter_date").val(epgListDateString);
+        $("#epg_filter_date_end").val(epgListEndDateString);
         $("#epg_filter_from, #epg_filter_to").timepicker({
             constrainInput: true,
             showPeriodLabels: false,
@@ -1228,7 +1232,7 @@ $(function() {
         function updateEpgFilterControls() {
             var dateEnabled = $("#epg_time_filter_enabled").is(":checked");
             $("#epg_custom_range").toggle(dateEnabled);
-            $("#epg_filter_date, #epg_filter_from, #epg_filter_to").prop("disabled", !dateEnabled);
+            $("#epg_filter_date, #epg_filter_date_end, #epg_filter_from, #epg_filter_to").prop("disabled", !dateEnabled);
             $("#epg_rating_min").prop("disabled", !$("#epg_rating_filter_enabled").is(":checked"));
         }
         $("#epg_time_filter_enabled, #epg_rating_filter_enabled").on("change", function() {
@@ -1256,6 +1260,7 @@ $(function() {
                 aoData.push({"name": "group", "value": $("#epg_group_filter").val() || ""});
                 aoData.push({"name": "date_filter_enabled", "value": $("#epg_time_filter_enabled").is(":checked") ? "1" : "0"});
                 aoData.push({"name": "filter_date", "value": $("#epg_filter_date").val() || epgListDateString});
+                aoData.push({"name": "filter_date_end", "value": $("#epg_filter_date_end").val() || epgListEndDateString});
                 aoData.push({"name": "filter_from", "value": $("#epg_filter_from").val() || "00:00"});
                 aoData.push({"name": "filter_to", "value": $("#epg_filter_to").val() || "23:59"});
                 aoData.push({"name": "rating_filter_enabled", "value": $("#epg_rating_filter_enabled").is(":checked") ? "1" : "0"});
@@ -1314,6 +1319,7 @@ $(function() {
             if (this.value) params.set("group", this.value);
             params.set("date_filter_enabled", $("#epg_time_filter_enabled").is(":checked") ? "1" : "0");
             params.set("filter_date", $("#epg_filter_date").val() || epgListDateString);
+            params.set("filter_date_end", $("#epg_filter_date_end").val() || epgListEndDateString);
             params.set("filter_from", $("#epg_filter_from").val() || "00:00");
             params.set("filter_to", $("#epg_filter_to").val() || "23:59");
             params.set("rating_filter_enabled", $("#epg_rating_filter_enabled").is(":checked") ? "1" : "0");
