@@ -12,10 +12,10 @@
         <span id="epg_custom_range" style="display:inline-flex; align-items:center; gap:5px;">
             <label for="epg_filter_date">Du :</label>
             <input type="text" id="epg_filter_date" style="width:105px;" />
+            <label for="epg_filter_from">à :</label>
+            <input type="text" id="epg_filter_from" value="00:00" style="width:65px;" />
             <label for="epg_filter_date_end">au :</label>
             <input type="text" id="epg_filter_date_end" style="width:105px;" />
-            <label for="epg_filter_from">De :</label>
-            <input type="text" id="epg_filter_from" value="00:00" style="width:65px;" />
             <label for="epg_filter_to">à :</label>
             <input type="text" id="epg_filter_to" value="23:59" style="width:65px;" />
         </span>
