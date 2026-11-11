@@ -917,12 +917,17 @@ def epglist_getter():
     date_filter_enabled = request.query.get('date_filter_enabled', '1') != '0'
     if date_filter_enabled:
         filter_date = request.query.get('filter_date', datetime.now().strftime("%Y-%m-%d"))
+        filter_date_end = request.query.get('filter_date_end', filter_date)
         filter_from = request.query.get('filter_from', '00:00')
         filter_to = request.query.get('filter_to', '23:59')
         try:
             datetime.strptime(filter_date, "%Y-%m-%d")
         except (TypeError, ValueError):
             filter_date = datetime.now().strftime("%Y-%m-%d")
+        try:
+            datetime.strptime(filter_date_end, "%Y-%m-%d")
+        except (TypeError, ValueError):
+            filter_date_end = filter_date
         try:
             datetime.strptime(filter_from, "%H:%M")
         except (TypeError, ValueError):
@@ -932,11 +937,17 @@ def epglist_getter():
         except (TypeError, ValueError):
             filter_to = "23:59"
 
-        if filter_to <= filter_from:
-            filter_sql += " AND datetime(guide.g_start)<datetime(? || ' ' || ?, '+1 day') AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
-        else:
-            filter_sql += " AND datetime(guide.g_start)<datetime(? || ' ' || ?) AND datetime(guide.g_stop)>datetime(? || ' ' || ?)"
-        filter_params += (filter_date, filter_to, filter_date, filter_from)
+        # The selected end date is inclusive.
+        start_datetime = datetime.strptime(filter_date + " " + filter_from, "%Y-%m-%d %H:%M")
+        end_datetime = datetime.strptime(filter_date_end + " " + filter_to, "%Y-%m-%d %H:%M")
+        if filter_date_end < filter_date:
+            filter_date_end = filter_date
+            end_datetime = datetime.strptime(filter_date_end + " " + filter_to, "%Y-%m-%d %H:%M")
+        elif end_datetime <= start_datetime and filter_date_end == filter_date:
+            end_datetime += timedelta(days=1)
+
+        filter_sql += " AND datetime(guide.g_start)<datetime(?) AND datetime(guide.g_stop)>datetime(?)"
+        filter_params += (end_datetime.strftime("%Y-%m-%d %H:%M"), start_datetime.strftime("%Y-%m-%d %H:%M"))
 
     # Optional IMDb minimum score (enabled by default at 6/10).
     rating_filter_enabled = request.query.get('rating_filter_enabled', '1') != '0'
