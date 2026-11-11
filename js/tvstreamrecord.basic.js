@@ -1213,6 +1213,15 @@ $(function() {
         $("#epg_filter_date, #epg_filter_date_end").datepicker({
             dateFormat: "yy-mm-dd",
             onSelect: function() {
+                var startDate = $("#epg_filter_date").datepicker("getDate");
+                var endDate = $("#epg_filter_date_end").datepicker("getDate");
+                if (startDate && endDate && endDate < startDate) {
+                    if (this.id === "epg_filter_date") {
+                        $("#epg_filter_date_end").datepicker("setDate", startDate);
+                    } else {
+                        $("#epg_filter_date").datepicker("setDate", endDate);
+                    }
+                }
                 epgListDateString = $("#epg_filter_date").val();
                 epgListEndDateString = $("#epg_filter_date_end").val();
                 $('#table_epglist').DataTable().ajax.reload();
