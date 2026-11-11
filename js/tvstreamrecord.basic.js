@@ -1210,25 +1210,48 @@ $(function() {
         $("#epg_rating_filter_enabled").prop("checked", epgParams.get("rating_filter_enabled") !== "0");
         $("#epg_rating_min").val(epgParams.get("rating_min") || "6");
 
+        // Keep the end date on the start date by default. Once the user
+        // chooses a distinct end date, changing the start date won't overwrite it.
+        var epgEndDateWasCustomized = epgParams.has("filter_date_end") &&
+            epgParams.get("filter_date_end") !== epgListDateString;
+        var epgPreviousStartDate = epgListDateString;
+
         $("#epg_filter_date, #epg_filter_date_end").datepicker({
             dateFormat: "yy-mm-dd",
+            showOn: "focus",
             onSelect: function() {
                 var startDate = $("#epg_filter_date").datepicker("getDate");
                 var endDate = $("#epg_filter_date_end").datepicker("getDate");
-                if (startDate && endDate && endDate < startDate) {
-                    if (this.id === "epg_filter_date") {
+
+                if (this.id === "epg_filter_date") {
+                    var newStartDate = $("#epg_filter_date").val();
+                    if (!epgEndDateWasCustomized || epgListEndDateString === epgPreviousStartDate) {
                         $("#epg_filter_date_end").datepicker("setDate", startDate);
-                    } else {
+                        epgListEndDateString = newStartDate;
+                    } else if (startDate && endDate && endDate < startDate) {
+                        $("#epg_filter_date_end").datepicker("setDate", startDate);
+                        epgListEndDateString = newStartDate;
+                    }
+                    epgPreviousStartDate = newStartDate;
+                } else {
+                    epgEndDateWasCustomized = !!(startDate && endDate && endDate.getTime() !== startDate.getTime());
+                    if (startDate && endDate && endDate < startDate) {
                         $("#epg_filter_date").datepicker("setDate", endDate);
+                        epgPreviousStartDate = $("#epg_filter_date").val();
                     }
                 }
+
                 epgListDateString = $("#epg_filter_date").val();
                 epgListEndDateString = $("#epg_filter_date_end").val();
                 $('#table_epglist').DataTable().ajax.reload();
             }
         });
-        $("#epg_filter_date").val(epgListDateString);
-        $("#epg_filter_date_end").val(epgListEndDateString);
+        // Explicitly open the calendar when either date field is clicked.
+        $("#epg_filter_date, #epg_filter_date_end").on("click", function() {
+            if (!$(this).prop("disabled")) $(this).datepicker("show");
+        });
+        $("#epg_filter_date").datepicker("setDate", epgListDateString);
+        $("#epg_filter_date_end").datepicker("setDate", epgListEndDateString);
         $("#epg_filter_from, #epg_filter_to").timepicker({
             constrainInput: true,
             showPeriodLabels: false,
