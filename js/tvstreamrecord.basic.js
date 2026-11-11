@@ -1250,6 +1250,7 @@ $(function() {
             "sPaginationType": "full_numbers",
             "bProcessing": true,
             "bAutoWidth": false,
+            "iDisplayLength": 100,
             "sAjaxSource": "/epglist_getter",
             "fnServerParams": function(aoData) {
                 aoData.push({"name": "group", "value": $("#epg_group_filter").val() || ""});
