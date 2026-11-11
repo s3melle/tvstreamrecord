@@ -1198,8 +1198,16 @@ $(function() {
     } else if (here("epglist")) {
 // ------------------------------------ EPG list tab only
         var serverSide = ($("#listmode").attr("value") == "1");
+        var epgParams = new URLSearchParams(window.location.search);
         var epgListDate = new Date();
-        var epgListDateString = $.datepicker.formatDate("yy-mm-dd", epgListDate);
+        var epgListDateString = epgParams.get("filter_date") || $.datepicker.formatDate("yy-mm-dd", epgListDate);
+
+        // Restore the EPG filters when navigating between M3U groups.
+        $("#epg_time_filter_enabled").prop("checked", epgParams.get("date_filter_enabled") !== "0");
+        $("#epg_filter_from").val(epgParams.get("filter_from") || "00:00");
+        $("#epg_filter_to").val(epgParams.get("filter_to") || "23:59");
+        $("#epg_rating_filter_enabled").prop("checked", epgParams.get("rating_filter_enabled") !== "0");
+        $("#epg_rating_min").val(epgParams.get("rating_min") || "6");
 
         $("#epg_filter_date").datepicker({
             dateFormat: "yy-mm-dd",
@@ -1300,7 +1308,16 @@ $(function() {
         });
         
         $("#epg_group_filter").on("change", function() {
-            window.location.href = "/epglist" + (this.value ? "?group=" + encodeURIComponent(this.value) : "");
+            // Keep the active date/time and IMDb filters when changing group.
+            var params = new URLSearchParams();
+            if (this.value) params.set("group", this.value);
+            params.set("date_filter_enabled", $("#epg_time_filter_enabled").is(":checked") ? "1" : "0");
+            params.set("filter_date", $("#epg_filter_date").val() || epgListDateString);
+            params.set("filter_from", $("#epg_filter_from").val() || "00:00");
+            params.set("filter_to", $("#epg_filter_to").val() || "23:59");
+            params.set("rating_filter_enabled", $("#epg_rating_filter_enabled").is(":checked") ? "1" : "0");
+            params.set("rating_min", $("#epg_rating_min").val() || "6");
+            window.location.href = "/epglist?" + params.toString();
         });
         initIcons();
         initEpgState();
