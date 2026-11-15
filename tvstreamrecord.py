@@ -508,12 +508,7 @@ def parse_list(content, how):
         return
 
     rowid = 1
-    if how == 0:
-        sqlRun('DELETE FROM channels')
-        sqlRun('DELETE FROM records')
-        sqlRun('DELETE FROM channel_groups')
-        setRecords()
-    else:
+    if how != 0:
         rows2 = sqlRun("select max(cid) from channels")
         if rows2 and rows2[0][0] is not None:
             rowid = rows2[0][0] + 1
@@ -537,7 +532,55 @@ def parse_list(content, how):
             rowid += 1
             name = None
 
-    if retl:
+    if how == 0:
+        # Reconcile a normal import with the existing channels instead of
+        # rebuilding the table. Keeping cid stable preserves every record
+        # (including recurring schedules) linked to that channel.
+        existing_rows = sqlRun("SELECT cid, cname FROM channels")
+        existing_by_name = {row[1].lower(): row[0] for row in existing_rows}
+        imported_names = set()
+        next_rows = sqlRun("SELECT MAX(cid) FROM channels")
+        next_cid = (next_rows[0][0] or 0) + 1 if next_rows else 1
+
+        for entry in retl:
+            channel_name, channel_path, _, group_name = entry
+            name_key = channel_name.lower()
+
+            # The database has a case-insensitive UNIQUE constraint on cname.
+            # Ignore duplicate names in the M3U, just as INSERT OR IGNORE did.
+            if name_key in imported_names:
+                continue
+            imported_names.add(name_key)
+
+            cid = existing_by_name.get(name_key)
+            if cid is not None:
+                # Update the stream URL without changing the channel id or
+                # the user's enabled/extension/EPG settings.
+                sqlRun("UPDATE channels SET cpath=? WHERE cid=?", (channel_path, cid))
+            else:
+                cid = next_cid
+                next_cid += 1
+                sqlRun("INSERT INTO channels VALUES (?, ?, 1, '', ?, 0)",
+                       (channel_name, channel_path, cid))
+                existing_by_name[name_key] = cid
+
+            sqlRun("DELETE FROM channel_groups WHERE cid=?", (cid,))
+            if group_name:
+                sqlRun("INSERT INTO channel_groups (cid, group_name) VALUES (?, ?)",
+                       (cid, group_name))
+
+        # Remove channels no longer present only when nothing references them.
+        # Keep channels with records so old history and future/recurring
+        # recordings remain attached to the original cid.
+        for old_name, cid in existing_rows:
+            if old_name.lower() not in imported_names:
+                linked_records = sqlRun(
+                    "SELECT 1 FROM records WHERE cid=? LIMIT 1", (cid,))
+                if not linked_records:
+                    sqlRun("DELETE FROM channel_groups WHERE cid=?", (cid,))
+                    sqlRun("DELETE FROM channels WHERE cid=?", (cid,))
+    elif retl:
+        # Append mode keeps its original behaviour.
         channel_rows = [entry[:3] for entry in retl]
         sqlRun("INSERT OR IGNORE INTO channels VALUES (?, ?, '1', '', ?, 0)", channel_rows, 1)
         sqlRun("UPDATE channels SET cpath=?2 WHERE cname=?1 AND ?3=?3", channel_rows, 1)
@@ -550,6 +593,8 @@ def parse_list(content, how):
                 else:
                     sqlRun("DELETE FROM channel_groups WHERE cid=?", (channel[0][0], ))
 
+    # Refresh active recording workers after any channel URL changes.
+    setRecords()
     print("M3U parsing completed with %d entries" % len(retl))
 
 #------------------------------- Configuration -------------------------------
