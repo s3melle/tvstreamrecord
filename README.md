@@ -48,6 +48,26 @@ Following links are provided for companies and projects mentioned in this readme
 
 ## Installation
 
+### Installation on Debian / Raspberry Pi OS
+
+The following instructions install tvstreamrecord directly on Debian-based systems (including Raspberry Pi OS), without Docker.
+
+Install the required system packages:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y python3 python3-bottle python3-cherrypy3 ffmpeg ca-certificates tzdata
+```
+
+Set the system timezone if needed (for example, Europe/Paris):
+
+```bash
+sudo timedatectl set-timezone Europe/Paris
+```
+
+Python 3, Bottle and CherryPy provide the application runtime; FFmpeg is required for recordings. The remaining packages provide certificates and timezone data.
+
+
 ### Installation on Synology NAS 
 
 This package requires Python (preferably Python3), which is preinstalled with DSM7 and can be installed from your Package Center on DSM6 and below. 
