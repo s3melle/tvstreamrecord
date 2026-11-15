@@ -572,7 +572,7 @@ def parse_list(content, how):
         # Remove channels no longer present only when nothing references them.
         # Keep channels with records so old history and future/recurring
         # recordings remain attached to the original cid.
-        for old_name, cid in existing_rows:
+        for cid, old_name in existing_rows:
             if old_name.lower() not in imported_names:
                 linked_records = sqlRun(
                     "SELECT 1 FROM records WHERE cid=? LIMIT 1", (cid,))
