@@ -4,43 +4,85 @@
 Deux façons de l'appeler :
 
   1. A la main
-       rec.py URL SORTIE.ts [-t SECONDES] [-m HAUTEUR_MAX] [--dry]
+       rec.py URL SORTIE.ts [-t SECONDES] [-m HAUTEUR_MAX] [--no-subs] [--dry]
 
   2. A la place de ffmpeg dans tvstreamrecord (page Configuration)
        Chemin ffmpeg      : /opt/tvstreamrecord/rec.py     (après chmod +x rec.py)
-       Paramètres ffmpeg  : -m 720                         (vide = meilleure qualité)
+       Paramètres ffmpeg  : -m 720 -metadata title=%fulltitle%
      tvstreamrecord lance alors :  rec.py -i URL -y -t DUREE <paramètres> FICHIER
-     Il faut donc VIDER les anciens paramètres (-map ..., -c copy, ...) : rec.py les gère.
+     Les placeholders de tvstreamrecord (%fulltitle% = nom de l'enregistrement, %title%,
+     %channel%, %date%...) sont déjà remplacés quand rec.py reçoit les arguments.
 
-Vidéo     : la plus haute qualité qui ne dépasse pas HAUTEUR_MAX (720 -> le 1280x720).
-Audio     : une piste par langue/titre (la meilleure débit), donc toutes les langues,
-            sans les doublons « même son à plusieurs débits ».
-Sous-titres: ceux que le conteneur accepte en copie (en .ts : dvb_subtitle / dvb_teletext).
-            Les sous-titres CC restent de toute façon dans la vidéo.
+Options de rec.py : -m HAUTEUR_MAX, --no-subs (ne pas mapper les sous-titres), --dry.
+Tout autre argument (ex. -metadata title=...) est transmis tel quel à ffmpeg, avant le
+fichier de sortie. Les anciens -map ... , -c ... et -loglevel ... sont ignorés : rec.py gère.
+
+Vidéo      : la plus haute qualité qui ne dépasse pas HAUTEUR_MAX (720 -> le 1280x720).
+Audio      : une piste par langue/titre (la meilleure débit), donc toutes les langues,
+             sans les doublons « même son à plusieurs débits ».
+Sous-titres: -map 0:s? (tous ceux qui existent, aucune erreur s'il n'y en a pas).
 
 Une fois les pistes choisies, rec.py se remplace par ffmpeg (exec) : tvstreamrecord
 arrête donc bien ffmpeg lui-même (terminate) et ffmpeg écrit dans SORTIE.log.
 """
-import argparse, json, os, subprocess, sys, time
+import json, os, subprocess, sys, time
 
 T0 = time.time()
 
-ap = argparse.ArgumentParser(description="Enregistre un flux en choisissant les pistes")
-ap.add_argument("-i", dest="entree", metavar="URL", help="URL (syntaxe ffmpeg, utilisée par tvstreamrecord)")
-ap.add_argument("-y", action="store_true", help="accepté pour compatibilité ffmpeg (on écrase toujours)")
-ap.add_argument("-loglevel", dest="loglevel", help="accepté pour compatibilité ffmpeg, ignoré")
-ap.add_argument("-t", type=int, default=0, help="durée en secondes (0 = sans limite)")
-ap.add_argument("-m", type=int, default=100000, help="hauteur vidéo max, ex 720")
-ap.add_argument("--dry", action="store_true", help="afficher la commande sans la lancer")
-ap.add_argument("chemins", nargs="+", metavar="[URL] SORTIE")
-a = ap.parse_args()
 
-if a.entree:
-    url, sortie = a.entree, a.chemins[-1]
-elif len(a.chemins) >= 2:
-    url, sortie = a.chemins[0], a.chemins[1]
-else:
-    ap.error("il faut une URL et un fichier de sortie")
+def usage(msg=None):
+    if msg:
+        sys.stderr.write("rec.py: %s\n" % msg)
+    sys.stderr.write(__doc__)
+    sys.exit(2)
+
+
+def valeur(argv, i):
+    if i + 1 >= len(argv):
+        usage("valeur manquante après %s" % argv[i])
+    return argv[i + 1]
+
+
+def entier(txt, nom):
+    try:
+        return int(float(txt))
+    except ValueError:
+        usage("%s attend un nombre, reçu %r" % (nom, txt))
+
+
+entree, duree, hmax, dry, nosubs = None, 0, 100000, False, False
+reste = []
+argv = sys.argv[1:]
+i = 0
+while i < len(argv):
+    x = argv[i]
+    if x in ("-h", "--help"):
+        usage()
+    elif x == "-i":
+        entree = valeur(argv, i); i += 2
+    elif x == "-t":
+        duree = entier(valeur(argv, i), "-t"); i += 2
+    elif x == "-m":
+        hmax = entier(valeur(argv, i), "-m"); i += 2
+    elif x == "-y":
+        i += 1
+    elif x in ("-loglevel", "-v", "-map", "-c"):   # gérés par rec.py: on ignore (et leur valeur)
+        valeur(argv, i); i += 2
+    elif x == "--dry":
+        dry = True; i += 1
+    elif x == "--no-subs":
+        nosubs = True; i += 1
+    else:
+        reste.append(x); i += 1
+
+if entree:                       # syntaxe ffmpeg: le dernier argument est le fichier de sortie
+    if not reste:
+        usage("fichier de sortie manquant")
+    url, sortie, extra = entree, reste[-1], reste[:-1]
+else:                            # URL SORTIE
+    if len(reste) < 2:
+        usage("il faut une URL et un fichier de sortie")
+    url, sortie, extra = reste[0], reste[1], reste[2:]
 
 FFMPEG = os.environ.get("FFMPEG", "ffmpeg")
 FFPROBE = os.environ.get("FFPROBE", "ffprobe")
@@ -73,7 +115,7 @@ vids = [s for s in streams if s.get("codec_type") == "video" and s.get("height")
         and (s.get("disposition") or {}).get("attached_pic") != 1]
 if not vids:
     sys.exit("rec.py: aucune vidéo trouvée")
-ok = [s for s in vids if s["height"] <= a.m] or [min(vids, key=lambda s: s["height"])]
+ok = [s for s in vids if s["height"] <= hmax] or [min(vids, key=lambda s: s["height"])]
 video = max(ok, key=lambda s: (s["height"], br(s)))
 
 groups = {}
@@ -86,33 +128,23 @@ for s in streams:
         groups[key] = s
 audios = sorted(groups.values(), key=lambda s: s["index"])
 
-# Sous-titres: en MPEG-TS seuls dvb_subtitle / dvb_teletext se copient (webvtt ferait échouer ffmpeg).
-ts = sortie.lower().endswith((".ts", ".m2ts", ".mts"))
-subs = [s for s in streams if s.get("codec_type") == "subtitle"
-        and (not ts or s.get("codec_name") in ("dvb_subtitle", "dvb_teletext"))]
-seen, subs_ok = set(), []
-for s in subs:
-    t = s.get("tags") or {}
-    key = (t.get("language", ""), t.get("title", ""), s.get("codec_name"))
-    if key not in seen:
-        seen.add(key)
-        subs_ok.append(s)
-
 cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-i", url, "-map", "0:%d" % video["index"]]
-for s in audios + subs_ok:
+for s in audios:
     cmd += ["-map", "0:%d" % s["index"]]
-cmd += ["-c", "copy", "-y"]
-if a.t:
+if not nosubs:
+    cmd += ["-map", "0:s?"]      # sous-titres s'il y en a, sans erreur sinon
+cmd += ["-c", "copy"] + extra + ["-y"]
+if duree:
     # ffprobe a pris du temps: on le retranche pour finir à l'heure prévue
-    cmd += ["-t", str(max(1, a.t - int(time.time() - T0)))]
+    cmd += ["-t", str(max(1, duree - int(time.time() - T0)))]
 cmd += [sortie]
 
 resume = "vidéo: %dx%d (flux %d); audio: %s; sous-titres: %s" % (
     video.get("width", 0), video["height"], video["index"],
     ", ".join("flux %d %s" % (s["index"], (s.get("tags") or {}).get("language", "")) for s in audios) or "aucun",
-    ", ".join("flux %d %s" % (s["index"], (s.get("tags") or {}).get("language", "")) for s in subs_ok) or "aucun")
+    "aucun (--no-subs)" if nosubs else "0:s? (si présents)")
 
-if a.dry:
+if dry:
     print(resume)
     print(" ".join(cmd))
     sys.exit(0)
