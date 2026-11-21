@@ -33,7 +33,8 @@ def sqlRun(sql, t=-1, many=0):
         conn = sqlite3.connect(dbpath, timeout=20)
         c = conn.cursor()
         c.execute('PRAGMA journal_mode = OFF;')
-        conn.text_factory = sqlite3.OptimizedUnicode
+        # Python 3.12+ removed sqlite3.OptimizedUnicode; the default str factory
+        # already returns SQLite TEXT values as Unicode strings.
         #print (conn.text_factory)
         if t != -1:
             if many == 1:
