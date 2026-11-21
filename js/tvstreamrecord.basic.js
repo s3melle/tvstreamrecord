@@ -1544,10 +1544,18 @@ $(function() {
             $("[id^=cfg_]").each(function() {
                 var value = $(this).val();
                 if ($(this).attr('id')=="cfg_server_port") {
-                    var port = parseInt(value);
-                    if (!checkRegexp("cfg_server_port", /^[0-9]{1,5}$/, "") || port<80 || isNaN(port) || port > 65535 ) {
-                        alert( $(this).attr('alert') );
+                    // Validate the trimmed field value directly; don't depend on checkRegexp's
+                    // implicit global variable or parseInt accepting a numeric prefix.
+                    var portText = String(value == null ? "" : value).trim();
+                    var port = Number(portText);
+                    if (!/^[0-9]{1,5}$/.test(portText) || !Number.isInteger(port) || port < 80 || port > 65535) {
+                        $("#cfg_server_port").addClass("ui-state-error");
+                        alert($(this).attr('alert'));
                         myalert = true;
+                    } else {
+                        $("#cfg_server_port").removeClass("ui-state-error");
+                        $(this).val(portText);
+                        value = portText;
                     }
                 } else if ($(this).attr('id')=="cfg_server_bind_address") {
                     var bindAddress = String(value == null ? "" : value).trim();
