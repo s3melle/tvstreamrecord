@@ -1301,10 +1301,9 @@ $(function() {
             });
         }
 
-        // Delegate the click from document so the shortcut still works if
-        // jQuery UI or another page script replaces/enhances the button elements.
-        $(document).off("click.epgWeekday", "#epg_weekday_shortcuts .epg-weekday-button");
-        $(document).on("click.epgWeekday", "#epg_weekday_shortcuts .epg-weekday-button", function(event) {
+        // Bind directly to the enhanced buttons. Update both the datepicker
+        // and the visible text inputs so the selected date is always obvious.
+        $("#epg_weekday_shortcuts .epg-weekday-button").off("click.epgWeekday").on("click.epgWeekday", function(event) {
             event.preventDefault();
             var weekday = parseInt($(this).attr("data-weekday"), 10);
             var today = new Date();
@@ -1314,8 +1313,8 @@ $(function() {
             targetDate.setDate(targetDate.getDate() + ((weekday - today.getDay() + 7) % 7));
             var targetString = $.datepicker.formatDate("yy-mm-dd", targetDate);
 
-            $("#epg_filter_date").datepicker("setDate", targetDate);
-            $("#epg_filter_date_end").datepicker("setDate", targetDate);
+            $("#epg_filter_date").datepicker("setDate", targetDate).val(targetString).trigger("change");
+            $("#epg_filter_date_end").datepicker("setDate", targetDate).val(targetString).trigger("change");
             $("#epg_filter_from").val("00:00");
             $("#epg_filter_to").val("23:59");
             $("#epg_time_filter_enabled").prop("checked", true);
