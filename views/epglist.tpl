@@ -33,7 +33,7 @@
             <input type="checkbox" id="epg_rating_filter_enabled" checked="checked" />
             IMDb minimum :
         </label>
-        <input type="number" id="epg_rating_min" min="0" max="10" step="0.1" value="6" style="width:58px;" />
+        <input type="number" id="epg_rating_min" min="0" max="10" step="0.5" value="6" style="width:58px;" />
         <span>/10</span>
         <label for="epg_group_filter">Groupe M3U :</label>
         <select id="epg_group_filter" class="text ui-widget-content ui-corner-all">
