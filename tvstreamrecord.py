@@ -614,8 +614,17 @@ def config_p():
                     # Synology only
                     config.writeWebman(cfg[1])
         if cfg[0]=="cfg_ffmpeg_path":
-            if which(cfg[1]) == None:
-                print("FFMPEG executable probably not found, please check your configuration")
+            # An empty setting is common on fresh installs. Resolve ffmpeg from
+            # PATH and persist the usable command instead of saving an empty one.
+            ffmpeg_path = str(cfg[1] or "").strip()
+            if not ffmpeg_path:
+                ffmpeg_path = which("ffmpeg") or "ffmpeg"
+            elif which(ffmpeg_path) is None:
+                # Keep a working system ffmpeg when a stale/custom path was saved.
+                ffmpeg_path = which("ffmpeg") or ffmpeg_path
+            cfg[1] = ffmpeg_path
+            if which(ffmpeg_path) is None:
+                print("FFMPEG executable not found in PATH; install ffmpeg or set its full path")
         if ((cfg[0]=="cfg_m3u_path" and cfg[1]!=config.cfg_m3u_path) or
             (cfg[0]=="cfg_m3u_timer" and cfg[1]!=config.cfg_m3u_timer)):
                 restart_sync = True
