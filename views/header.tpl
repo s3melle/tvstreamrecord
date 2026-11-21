@@ -24,7 +24,7 @@
     <script type="text/javascript" src="js/i18n/jquery.ui.datepicker-{{locale}}.js"></script>	
 %end
     <script type="text/javascript" src="js/jqueryFileTree.js"></script>
-    <script type="text/javascript" src="js/tvstreamrecord.basic.js?v=152"></script>
+    <script type="text/javascript" src="js/tvstreamrecord.basic.js?v=153"></script>
     <script type="text/javascript" src="js/preloader.js"></script>
 </head><BODY>
 <div id="datepicker_local" style="display: none;"></div>
