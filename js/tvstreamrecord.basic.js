@@ -1275,6 +1275,59 @@ $(function() {
         $("#epg_filter_from, #epg_filter_to").on("change", reloadEpgList);
         updateEpgFilterControls();
 
+        // Weekday shortcuts always target the next occurrence (today is allowed).
+        // For example, clicking Friday on Saturday selects Friday next week.
+        $("#epg_weekday_shortcuts .epg-weekday-button").button().each(function() {
+            var weekday = parseInt($(this).attr("data-weekday"), 10);
+            var today = new Date();
+            today.setHours(0, 0, 0, 0);
+            var daysAhead = (weekday - today.getDay() + 7) % 7;
+            var targetDate = new Date(today.getTime());
+            targetDate.setDate(targetDate.getDate() + daysAhead);
+            $(this).text($(this).text() + " " + $.datepicker.formatDate("dd/mm", targetDate));
+            $(this).attr("title", "Filtrer le " + $.datepicker.formatDate("DD dd/mm/yy", targetDate));
+        });
+
+        function refreshEpgWeekdaySelection() {
+            var selectedDate = $("#epg_filter_date").val();
+            $("#epg_weekday_shortcuts .epg-weekday-button").each(function() {
+                var weekday = parseInt($(this).attr("data-weekday"), 10);
+                var today = new Date();
+                today.setHours(0, 0, 0, 0);
+                var targetDate = new Date(today.getTime());
+                targetDate.setDate(targetDate.getDate() + ((weekday - today.getDay() + 7) % 7));
+                var targetString = $.datepicker.formatDate("yy-mm-dd", targetDate);
+                $(this).toggleClass("ui-state-active", selectedDate === targetString && $("#epg_time_filter_enabled").is(":checked"));
+            });
+        }
+
+        $("#epg_weekday_shortcuts .epg-weekday-button").on("click", function() {
+            var weekday = parseInt($(this).attr("data-weekday"), 10);
+            var today = new Date();
+            today.setHours(0, 0, 0, 0);
+            var targetDate = new Date(today.getTime());
+            // A zero offset means today; a weekday already passed naturally rolls to next week.
+            targetDate.setDate(targetDate.getDate() + ((weekday - today.getDay() + 7) % 7));
+            var targetString = $.datepicker.formatDate("yy-mm-dd", targetDate);
+
+            $("#epg_filter_date").datepicker("setDate", targetDate);
+            $("#epg_filter_date_end").datepicker("setDate", targetDate);
+            $("#epg_filter_from").val("00:00");
+            $("#epg_filter_to").val("23:59");
+            $("#epg_time_filter_enabled").prop("checked", true);
+            epgListDateString = targetString;
+            epgListEndDateString = targetString;
+            epgPreviousStartDate = targetString;
+            epgEndDateWasCustomized = false;
+            updateEpgFilterControls();
+            refreshEpgWeekdaySelection();
+            reloadEpgList();
+        });
+
+        $("#epg_filter_date, #epg_filter_date_end").on("change", refreshEpgWeekdaySelection);
+        $("#epg_time_filter_enabled").on("change", refreshEpgWeekdaySelection);
+        refreshEpgWeekdaySelection();
+
         // A pagination change should bring the EPG table back to the top of the page.
         $('#table_epglist').on('page.dt', function() {
             $('html, body').stop(true).animate({scrollTop: 0}, 200);
