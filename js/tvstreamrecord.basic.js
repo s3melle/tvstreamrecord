@@ -1550,9 +1550,14 @@ $(function() {
                         myalert = true;
                     }
                 } else if ($(this).attr('id')=="cfg_server_bind_address") {
-                    if ( value != "localhost") if ( !checkRegexp( "cfg_server_bind_address", /^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$/, "" ) ) {
-                        alert( $(this).attr('alert') );
+                    var bindAddress = String(value == null ? "" : value).trim();
+                    var ipv4Pattern = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
+                    if (bindAddress != "localhost" && !ipv4Pattern.test(bindAddress)) {
+                        $("#cfg_server_bind_address").addClass("ui-state-error");
+                        alert($(this).attr('alert'));
                         myalert = true;
+                    } else {
+                        $("#cfg_server_bind_address").removeClass("ui-state-error");
                     }
                 } else if ($(this).attr('id')=="cfg_retry_count") {
                     if ( !checkRegexp( "cfg_retry_count", /^\d+$/, "" ) ) {
@@ -1570,9 +1575,13 @@ $(function() {
                         myalert = true;
                     }
                 } else if ($(this).attr('id')=="cfg_grab_time") {
-                    if ( value.trim() != "0" ) if ( ! $.datepicker.parseTime("H:m", $( "#cfg_grab_time" ).val()) ) {
-                        alert( $(this).attr('alert') );
+                    var grabTime = String(value == null ? "" : value).trim();
+                    if (grabTime != "0" && !/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(grabTime)) {
+                        $("#cfg_grab_time").addClass("ui-state-error");
+                        alert($(this).attr('alert'));
                         myalert = true;
+                    } else {
+                        $("#cfg_grab_time").removeClass("ui-state-error");
                     }
                 /*} else if ($(this).attr('id')=="cfg_record_mask") {
                     if ( value.lastIndexOf("%date%")==-1 && value.lastIndexOf("%title%")==-1) {
