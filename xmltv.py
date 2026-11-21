@@ -142,6 +142,18 @@ def getProgList(ver='', progress_callback=None):
     else:
         stri = getFile(initpath, 1, ver)
 
+    # Rebuild the EPG from the current XMLTV source on every successful import.
+    # Recording jobs are stored separately in the 'records' table and do not depend
+    # on rows in 'guide'. Reset guide_chan too, otherwise incremental XMLTV imports
+    # would skip unchanged source files after the guide table has been emptied.
+    if stri and "</tv>" in stri.lower() and "<channel" in stri.lower():
+        sqlRun("DELETE FROM guide")
+        sqlRun("DELETE FROM guide_chan")
+        print("XMLTV: previous guide cleared; scheduled recordings are preserved")
+    else:
+        print("XMLTV: source is empty or incomplete; keeping the existing guide")
+        return 0
+
     #stri = getTestFile()
 
     channellist = []
@@ -179,7 +191,7 @@ def getProgList(ver='', progress_callback=None):
                         dt = datetime.strptime(getAttr(t_attr, "lastmodified")[0:14],"%Y%m%d%H%M%S")
                         if dt>lastdate and dtepg>=datetime.now()-timedelta(days=1):
                             source = url+g_id+"_"+dttext+".xml.gz"
-                            entries,rec = getProg(getFile(source,0,ver),[],keylist,update_progress)
+                            entries,rec = getProg(getFile(source,1,ver),[],keylist,update_progress)
                             totalentries += entries
                             reclist += rec
                         if dt>dtmax:
