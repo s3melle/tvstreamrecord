@@ -1275,6 +1275,13 @@ $(function() {
         $("#epg_filter_from, #epg_filter_to").on("change", reloadEpgList);
         updateEpgFilterControls();
 
+        // Small current-day marker; separate from jQuery UI's active-filter styling.
+        if (!$("#epg-weekday-today-style").length) {
+            $("<style id='epg-weekday-today-style'>")
+                .text("#epg_weekday_shortcuts .epg-weekday-button.epg-today .ui-button-text::after { content: ''; display: inline-block; width: 5px; height: 5px; margin-left: 5px; border-radius: 50%; background: #097479; vertical-align: middle; }")
+                .appendTo("head");
+        }
+
         // Weekday shortcuts always target the next occurrence (today is allowed).
         // For example, clicking Friday on Saturday selects Friday next week.
         $("#epg_weekday_shortcuts .epg-weekday-button").button().each(function() {
@@ -1285,7 +1292,10 @@ $(function() {
             var targetDate = new Date(today.getTime());
             targetDate.setDate(targetDate.getDate() + daysAhead);
             $(this).text($(this).text() + " " + $.datepicker.formatDate("dd/mm", targetDate));
-            $(this).attr("title", "Filtrer le " + $.datepicker.formatDate("DD dd/mm/yy", targetDate));
+            // Mark today independently from the active filter state.
+            $(this).toggleClass("epg-today", weekday === today.getDay());
+            var dayTitle = $.datepicker.formatDate("DD dd/mm/yy", targetDate);
+            $(this).attr("title", (weekday === today.getDay() ? "Aujourd'hui — " : "Filtrer le ") + dayTitle);
         });
 
         function refreshEpgWeekdaySelection() {
