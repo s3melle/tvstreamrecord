@@ -1551,6 +1551,12 @@ $(function() {
                     }
                 } else if ($(this).attr('id')=="cfg_server_bind_address") {
                     var bindAddress = String(value == null ? "" : value).trim();
+                    // An empty bind address means listen on all IPv4 interfaces.
+                    if (bindAddress === "") {
+                        bindAddress = "0.0.0.0";
+                        $(this).val(bindAddress);
+                        value = bindAddress;
+                    }
                     var ipv4Pattern = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
                     if (bindAddress != "localhost" && !ipv4Pattern.test(bindAddress)) {
                         $("#cfg_server_bind_address").addClass("ui-state-error");
@@ -1558,6 +1564,7 @@ $(function() {
                         myalert = true;
                     } else {
                         $("#cfg_server_bind_address").removeClass("ui-state-error");
+                        value = bindAddress;
                     }
                 } else if ($(this).attr('id')=="cfg_retry_count") {
                     if ( !checkRegexp( "cfg_retry_count", /^\d+$/, "" ) ) {
@@ -1576,12 +1583,21 @@ $(function() {
                     }
                 } else if ($(this).attr('id')=="cfg_grab_time") {
                     var grabTime = String(value == null ? "" : value).trim();
+                    // Empty means manual EPG import only; accept legacy H:mm values too.
+                    if (grabTime === "") {
+                        grabTime = "0";
+                    } else {
+                        var legacyTime = grabTime.match(/^([0-9]):([0-5][0-9])$/);
+                        if (legacyTime) grabTime = "0" + legacyTime[1] + ":" + legacyTime[2];
+                    }
                     if (grabTime != "0" && !/^(?:[01][0-9]|2[0-3]):[0-5][0-9]$/.test(grabTime)) {
                         $("#cfg_grab_time").addClass("ui-state-error");
                         alert($(this).attr('alert'));
                         myalert = true;
                     } else {
                         $("#cfg_grab_time").removeClass("ui-state-error");
+                        $(this).val(grabTime);
+                        value = grabTime;
                     }
                 /*} else if ($(this).attr('id')=="cfg_record_mask") {
                     if ( value.lastIndexOf("%date%")==-1 && value.lastIndexOf("%title%")==-1) {
