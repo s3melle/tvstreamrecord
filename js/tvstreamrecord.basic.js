@@ -1301,7 +1301,11 @@ $(function() {
             });
         }
 
-        $("#epg_weekday_shortcuts .epg-weekday-button").on("click", function() {
+        // Delegate the click from document so the shortcut still works if
+        // jQuery UI or another page script replaces/enhances the button elements.
+        $(document).off("click.epgWeekday", "#epg_weekday_shortcuts .epg-weekday-button");
+        $(document).on("click.epgWeekday", "#epg_weekday_shortcuts .epg-weekday-button", function(event) {
+            event.preventDefault();
             var weekday = parseInt($(this).attr("data-weekday"), 10);
             var today = new Date();
             today.setHours(0, 0, 0, 0);
