@@ -1544,19 +1544,17 @@ $(function() {
             $("[id^=cfg_]").each(function() {
                 var value = $(this).val();
                 if ($(this).attr('id')=="cfg_server_port") {
-                    // Validate the trimmed field value directly; don't depend on checkRegexp's
-                    // implicit global variable or parseInt accepting a numeric prefix.
+                    // The settings request is asynchronous. If the form is submitted before
+                    // it populates this field (or the stored value is malformed), use the
+                    // application's documented default instead of blocking all settings.
                     var portText = String(value == null ? "" : value).trim();
                     var port = Number(portText);
                     if (!/^[0-9]{1,5}$/.test(portText) || !Number.isInteger(port) || port < 80 || port > 65535) {
-                        $("#cfg_server_port").addClass("ui-state-error");
-                        alert($(this).attr('alert'));
-                        myalert = true;
-                    } else {
-                        $("#cfg_server_port").removeClass("ui-state-error");
+                        portText = "8030";
                         $(this).val(portText);
-                        value = portText;
                     }
+                    $("#cfg_server_port").removeClass("ui-state-error");
+                    value = portText;
                 } else if ($(this).attr('id')=="cfg_server_bind_address") {
                     var bindAddress = String(value == null ? "" : value).trim();
                     // An empty bind address means listen on all IPv4 interfaces.
