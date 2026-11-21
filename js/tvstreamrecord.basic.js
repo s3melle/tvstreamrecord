@@ -1634,10 +1634,22 @@ $(function() {
             if (!myalert) {
                 var my_config_data_str = JSON.stringify(my_config_data);
                 $("#label_config_saved").text($("#label_config_saved").attr("info"));
-                $.post("/config",  {configdata:my_config_data_str}, function() {
-                        $("#label_config_saved").text("");
-                        if(reload) window.location.reload(false);
-                    }, "json");
+                $.ajax({
+                    url: "/config",
+                    type: "POST",
+                    data: {configdata: my_config_data_str},
+                    dataType: "json",
+                    timeout: 30000
+                }).done(function() {
+                    $("#label_config_saved").text("");
+                    if (reload) window.location.reload(false);
+                }).fail(function(xhr, status) {
+                    var message = status === "timeout"
+                        ? "Saving configuration timed out."
+                        : "Unable to save configuration (HTTP " + (xhr.status || "error") + ").";
+                    $("#label_config_saved").text(message);
+                    console.error("Configuration save failed:", status, xhr.responseText);
+                });
             }
         });
 
