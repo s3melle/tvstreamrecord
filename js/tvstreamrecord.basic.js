@@ -1572,21 +1572,22 @@ $(function() {
                         $("#cfg_server_bind_address").removeClass("ui-state-error");
                         value = bindAddress;
                     }
-                } else if ($(this).attr('id')=="cfg_retry_count") {
-                    if ( !checkRegexp( "cfg_retry_count", /^\d+$/, "" ) ) {
-                        alert( $(this).attr('alert') );
-                        myalert = true;
+                } else if (["cfg_retry_count", "cfg_m3u_timer", "cfg_failsafe_delta"].includes($(this).attr('id'))) {
+                    // Normalize numeric spinner fields. Empty values fall back to the
+                    // documented defaults so one untouched/cleared field cannot block saving.
+                    var numericId = $(this).attr('id');
+                    var numericDefaults = {
+                        cfg_retry_count: "99",
+                        cfg_m3u_timer: "0",
+                        cfg_failsafe_delta: "10"
+                    };
+                    var numericText = String(value == null ? "" : value).trim();
+                    if (numericText === "") numericText = numericDefaults[numericId];
+                    if (!/^\d+$/.test(numericText)) {
+                        numericText = numericDefaults[numericId];
                     }
-                } else if ($(this).attr('id')=="cfg_m3u_timer") {
-                    if ( !checkRegexp( "cfg_m3u_timer", /^\d+$/, "" ) ) {
-                        alert( $(this).attr('alert') );
-                        myalert = true;
-                    }
-                } else if ($(this).attr('id')=="cfg_failsafe_delta") {
-                    if ( !checkRegexp( "cfg_failsafe_delta", /^\d+$/, "" ) ) {
-                        alert( $(this).attr('alert') );
-                        myalert = true;
-                    }
+                    $(this).val(numericText).removeClass("ui-state-error");
+                    value = numericText;
                 } else if ($(this).attr('id')=="cfg_grab_time") {
                     var grabTime = String(value == null ? "" : value).trim();
                     // Empty means manual EPG import only; accept legacy H:mm values too.
