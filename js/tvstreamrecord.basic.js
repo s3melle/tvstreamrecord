@@ -1551,7 +1551,7 @@ $(function() {
                     }
                 } else if ($(this).attr('id')=="cfg_server_bind_address") {
                     var bindAddress = String(value == null ? "" : value).trim();
-                    var ipv4Pattern = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
+                    var ipv4Pattern = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9]{2}|[1-9]?[0-9])$/;
                     if (bindAddress != "localhost" && !ipv4Pattern.test(bindAddress)) {
                         $("#cfg_server_bind_address").addClass("ui-state-error");
                         alert($(this).attr('alert'));
