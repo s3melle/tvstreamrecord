@@ -148,7 +148,7 @@ def getProgList(ver='', progress_callback=None):
     # would skip unchanged source files after the guide table has been emptied.
     if stri and "</tv>" in stri.lower() and "<channel" in stri.lower():
         sqlRun("DELETE FROM guide")
-        sqlRun("DELETE FROM guide_chan")
+        sqlRun("UPDATE guide_chan SET g_lasttime='1970-01-01 00:00:00'")
         print("XMLTV: previous guide cleared; scheduled recordings are preserved")
     else:
         print("XMLTV: source is empty or incomplete; keeping the existing guide")
