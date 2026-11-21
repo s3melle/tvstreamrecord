@@ -19,6 +19,16 @@
             <label for="epg_filter_to">à :</label>
             <input type="text" id="epg_filter_to" value="23:59" style="width:65px;" />
         </span>
+        <div id="epg_weekday_shortcuts" style="display:flex; flex-wrap:wrap; align-items:center; gap:5px; flex-basis:100%; margin:2px 0 4px 0;">
+            <span style="font-weight:bold; margin-right:4px;">Jours :</span>
+            <button type="button" class="epg-weekday-button" data-weekday="1">Lundi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="2">Mardi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="3">Mercredi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="4">Jeudi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="5">Vendredi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="6">Samedi</button>
+            <button type="button" class="epg-weekday-button" data-weekday="0">Dimanche</button>
+        </div>
         <label class="epg-filter-toggle" for="epg_rating_filter_enabled">
             <input type="checkbox" id="epg_rating_filter_enabled" checked="checked" />
             IMDb minimum :
