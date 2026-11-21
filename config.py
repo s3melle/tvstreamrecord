@@ -84,7 +84,7 @@ configuration = [
 [
 'cfg_ffmpeg_path',
 'Full path to ffmpeg for other streams support',
-'ffmpeg'
+'g'
 ],
 
 [
@@ -96,7 +96,7 @@ configuration = [
 [
 'cfg_ffmpeg_params',
 "Additional output arguments for ffmpeg (default: '-acodec copy -vcodec copy')",
-'-loglevel fatal -map 0 -c copy'
+'-metadata title=%fulltitle%'
 ],
 
 [
