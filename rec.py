@@ -14,20 +14,18 @@ Deux façons de l'appeler :
      %channel%, %date%...) sont déjà remplacés quand rec.py reçoit les arguments.
 
 Options de rec.py : -m HAUTEUR_MAX, --no-subs (ne pas mapper les sous-titres), --dry,
---raw (impose le mode brut), --ffmpeg (impose ffmpeg, sans mode brut).
+--raw (impose le mode brut), --ffmpeg (impose ffmpeg, c'est déjà le défaut).
 Tout autre argument (ex. -metadata title=...) est transmis tel quel à ffmpeg, avant le
 fichier de sortie. Les anciens -map ... , -c ... et -loglevel ... sont ignorés : rec.py gère.
 
 Deux modes d'enregistrement :
-  * MODE BRUT (automatique pour une playlist HLS « simple »: audio et vidéo dans les mêmes
-    segments TS, sans chiffrement). rec.py télécharge lui-même les segments et les écrit
-    bout à bout. ffmpeg ne sait pas suivre un changement de flux en cours d'enregistrement
-    (nouveau PID vidéo après un changement de clip: tout ce qui suit est jeté et on n'a plus
-    que le son, constaté sur Pluto le 22/11); en mode brut rien n'est démultiplexé, donc rien
-    ne se perd. Un segment en erreur (502...) est redemandé plusieurs fois. Les arguments
+  * MODE BRUT (seulement avec --raw; ffmpeg est le mode par défaut car il remet les timestamps
+    en ordre). Pour une playlist HLS « simple »: audio et vidéo dans les mêmes
+    segments TS, sans chiffrement. rec.py télécharge lui-même les segments et les écrit
+    bout à bout, sans rien corriger (timestamps invalides / paquets corrompus possibles à la
+    lecture). Un segment en erreur (502...) est redemandé plusieurs fois. Les arguments
     destinés à ffmpeg (-metadata...) sont ignorés dans ce mode.
-  * MODE FFMPEG (repli): audio/sous-titres dans des playlists séparées, segments chiffrés
-    (AES), fMP4, ou source qui n'est pas du HLS. Choix des pistes avec ffprobe, voir plus bas.
+  * MODE FFMPEG (défaut): choix des pistes avec ffprobe, voir plus bas.
 
 Vidéo      : la plus haute qualité qui ne dépasse pas HAUTEUR_MAX (720 -> le 1280x720).
 Audio      : une piste par langue/titre (la meilleure débit), donc toutes les langues,
@@ -344,7 +342,9 @@ def enregistrer_brut(media_url, sortie, duree, resume, ignores):
     return 0 if ecrits else 1
 
 
-media_url, raison = (None, "--ffmpeg") if forcer == "ffmpeg" else plan_brut(url, hmax, nosubs)
+# ffmpeg est le mode par défaut: il remet les timestamps en ordre (le mode brut recolle les segments
+# tels quels, sans rien corriger: timestamps invalides / paquets corrompus constatés à la lecture).
+media_url, raison = plan_brut(url, hmax, nosubs) if forcer == "brut" else (None, "défaut" if forcer is None else "--ffmpeg")
 if dry and not media_url:
     print("mode ffmpeg (%s)" % raison)
 if media_url:
