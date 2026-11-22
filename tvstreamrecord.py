@@ -792,7 +792,9 @@ class epggrabthread(Thread):
 
 @route('/getepgstate')
 def getepgstate():
-    return json.dumps( {"grabState": grabthread.getState() } )
+    rows = sqlRun("SELECT value FROM config WHERE param='cfg_epg_last_import'")
+    last_import = rows[0][0] if rows else "jamais"
+    return json.dumps({"grabState": grabthread.getState(), "lastImport": last_import})
 
 @post('/grabepg')
 def grabepg():
@@ -956,7 +958,9 @@ def epglist_s(keyword=''):
             pass
         keyword = keyword.replace('%20',' ')
     selected_group = request.query.group
-    return internationalize(template('epglist', keyword_for_epg=keyword, listmode=config.cfg_switch_epglist_mode, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group))
+    last_import_rows = sqlRun("SELECT value FROM config WHERE param='cfg_epg_last_import'")
+    last_import = last_import_rows[0][0] if last_import_rows else "jamais"
+    return internationalize(template('epglist', keyword_for_epg=keyword, listmode=config.cfg_switch_epglist_mode, rows2=sqlRun('SELECT cid, cname FROM channels where cenabled=1 ORDER BY cid'), deltab=config.cfg_delta_before_epg, deltaa=config.cfg_delta_after_epg, epggroups=get_m3u_groups(), selected_group=selected_group, last_import=last_import))
 
 @route('/epglist_getter')
 def epglist_getter():
