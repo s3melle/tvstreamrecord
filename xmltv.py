@@ -214,6 +214,7 @@ def getProgList(ver='', progress_callback=None):
     del (stri)
 
     print ("XMLTV import completed with %s entries" % totalentries)
+    sqlRun("INSERT OR REPLACE INTO config(param, desc, value) VALUES('cfg_epg_last_import', 'Last successful EPG import', ?)", (datetime.now().strftime("%d/%m/%Y à %H:%M"),))
     return totalrecords
 
 def getProg(strp, channellist=[], keylist=[], progress_callback=None):
