@@ -404,6 +404,9 @@ function getEpgState() {
     $.get("/getepgstate",
         function(data) {
             var state = data.grabState;
+            if ($("#epg_last_import").length) {
+                $("#epg_last_import").text("Dernier import EPG : " + (data.lastImport || "jamais"));
+            }
             epgmode = 0;
             $( "#grabepg" ).removeProp("disabled");
             $( "#grabepg" ).removeClass("ui-state-disabled");
