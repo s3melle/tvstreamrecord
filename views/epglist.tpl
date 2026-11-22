@@ -49,6 +49,7 @@
     </div>
     <h1><div class="lefty">§Electronic Program Guide§ - §list view§</div>
 <button id="grabepg" class="grabepgclass">§Import EPG§</button>
+<span id="epg_last_import" style="margin-left:10px; font-size:0.85em; font-weight:normal;">Dernier import EPG : {{last_import}}</span>
 </h1>
 <table id="table_epglist">
     <thead>
