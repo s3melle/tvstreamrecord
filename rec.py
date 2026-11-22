@@ -34,8 +34,12 @@ Audio      : une piste par langue/titre (la meilleure débit), donc toutes les l
              sans les doublons « même son à plusieurs débits ».
 Sous-titres: -map 0:s? (tous ceux qui existent, aucune erreur s'il n'y en a pas).
 
-Une fois les pistes choisies, rec.py se remplace par ffmpeg (exec) : tvstreamrecord
-arrête donc bien ffmpeg lui-même (terminate) et ffmpeg écrit dans SORTIE.log.
+Mode ffmpeg surveillé : rec.py lance ffmpeg (écrit dans SORTIE.log) et le surveille.
+  - un flux apparu après le début (« New video stream ») dans les 3 premières minutes
+    -> relance avec une nouvelle analyse (REC_FENETRE, 180 s) ;
+  - fichier qui ne grossit plus depuis 30 s -> relance (REC_STALL) ; 10 relances au plus.
+  Chaque relance écrit dans SORTIE.partN, ajouté à SORTIE à la fin (sorties .ts uniquement).
+  tvstreamrecord arrête rec.py (SIGTERM) : ffmpeg est arrêté proprement, les parties assemblées.
 """
 import json, os, re, signal, subprocess, sys, time
 import urllib.error, urllib.parse, urllib.request
@@ -356,16 +360,19 @@ if media_url:
 elif forcer == "brut":
     sys.exit("rec.py: mode brut impossible: " + raison)
 
-try:
-    p = subprocess.run([FFPROBE, "-v", "error", "-show_streams", "-of", "json", url],
-                       capture_output=True, text=True, timeout=90)
-except subprocess.TimeoutExpired:
-    sys.exit("rec.py: ffprobe a dépassé 90 s")
-except OSError as e:
-    sys.exit("rec.py: ffprobe introuvable (%s)" % e)
-if p.returncode:
-    sys.exit("rec.py: ffprobe a échoué: " + p.stderr.strip()[:300])
-streams = json.loads(p.stdout).get("streams", [])
+# ---------------------------------------------------------------------------------------------
+# Mode ffmpeg, avec surveillance. ffmpeg fige ses flux au démarrage: un flux qui apparaît ensuite
+# est jeté, et une source capricieuse peut le bloquer pendant des minutes. rec.py le surveille:
+#   - flux apparu après le début (message "New ... stream") dans les 3 premières minutes -> relance
+#     avec une nouvelle analyse (choix de la qualité refait sur le flux tel qu'il est maintenant)
+#   - fichier qui ne grossit plus depuis STALL secondes -> relance (à tout moment)
+# Chaque relance écrit dans SORTIE.partN, ajouté à SORTIE à la fin (concaténation TS).
+# Sorties non TS: pas de relance (on ne sait pas concaténer), ffmpeg tourne une seule fois.
+# ---------------------------------------------------------------------------------------------
+FENETRE_NOUVEAU_FLUX = int(os.environ.get("REC_FENETRE", "180"))
+STALL = int(os.environ.get("REC_STALL", "30"))
+MAX_RELANCES = int(os.environ.get("REC_RELANCES", "10"))
+sortie_ts = sortie.lower().endswith((".ts", ".mts", ".m2ts")) or "mpegts" in extra
 
 
 def br(s):
@@ -380,47 +387,176 @@ def br(s):
     return 0
 
 
-vids = [s for s in streams if s.get("codec_type") == "video" and s.get("height")
-        and (s.get("disposition") or {}).get("attached_pic") != 1]
-if not vids:
-    sys.exit("rec.py: aucune vidéo trouvée")
-ok = [s for s in vids if s["height"] <= hmax] or [min(vids, key=lambda s: s["height"])]
-video = max(ok, key=lambda s: (s["height"], br(s)))
+def preparer(fichier):
+    """ffprobe + choix des flux. Renvoie (commande, résumé) ou lève RuntimeError."""
+    try:
+        p = subprocess.run([FFPROBE, "-v", "error", "-show_streams", "-of", "json", url],
+                           capture_output=True, text=True, timeout=90)
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("ffprobe a dépassé 90 s")
+    except OSError as e:
+        raise RuntimeError("ffprobe introuvable (%s)" % e)
+    if p.returncode:
+        raise RuntimeError("ffprobe a échoué: " + p.stderr.strip()[:300])
+    streams = json.loads(p.stdout).get("streams", [])
+    vids = [s for s in streams if s.get("codec_type") == "video" and s.get("height")
+            and (s.get("disposition") or {}).get("attached_pic") != 1]
+    if not vids:
+        raise RuntimeError("aucune vidéo trouvée")
+    ok = [s for s in vids if s["height"] <= hmax] or [min(vids, key=lambda s: s["height"])]
+    video = max(ok, key=lambda s: (s["height"], br(s)))
+    groups = {}
+    for s in streams:
+        if s.get("codec_type") != "audio":
+            continue
+        t = s.get("tags") or {}
+        key = (t.get("language", ""), t.get("title", "") or t.get("handler_name", ""))
+        if key not in groups or br(s) >= br(groups[key]):
+            groups[key] = s
+    audios = sorted(groups.values(), key=lambda s: s["index"])
 
-groups = {}
-for s in streams:
-    if s.get("codec_type") != "audio":
-        continue
-    t = s.get("tags") or {}
-    key = (t.get("language", ""), t.get("title", "") or t.get("handler_name", ""))
-    if key not in groups or br(s) >= br(groups[key]):
-        groups[key] = s
-audios = sorted(groups.values(), key=lambda s: s["index"])
+    cmd = [FFMPEG, "-hide_banner", "-nostdin", "-loglevel", "warning", "-i", url,
+           "-map", "0:%d" % video["index"]]
+    for s in audios:
+        cmd += ["-map", "0:%d" % s["index"]]
+    if not nosubs:
+        cmd += ["-map", "0:s?"]      # sous-titres s'il y en a, sans erreur sinon
+    cmd += ["-c", "copy"] + extra + ["-y"]
+    if duree:
+        # le temps déjà écoulé (ffprobe compris) est retranché pour finir à l'heure prévue
+        cmd += ["-t", str(max(1, int(duree - (time.time() - T0))))]
+    cmd += [fichier]
+    resume = "vidéo: %dx%d (flux %d); audio: %s; sous-titres: %s" % (
+        video.get("width", 0), video["height"], video["index"],
+        ", ".join("flux %d %s" % (s["index"], (s.get("tags") or {}).get("language", "")) for s in audios) or "aucun",
+        "aucun (--no-subs)" if nosubs else "0:s? (si présents)")
+    return cmd, resume
 
-cmd = [FFMPEG, "-hide_banner", "-loglevel", "warning", "-i", url, "-map", "0:%d" % video["index"]]
-for s in audios:
-    cmd += ["-map", "0:%d" % s["index"]]
-if not nosubs:
-    cmd += ["-map", "0:s?"]      # sous-titres s'il y en a, sans erreur sinon
-cmd += ["-c", "copy"] + extra + ["-y"]
-if duree:
-    # ffprobe a pris du temps: on le retranche pour finir à l'heure prévue
-    cmd += ["-t", str(max(1, duree - int(time.time() - T0)))]
-cmd += [sortie]
-
-resume = "mode ffmpeg (%s). vidéo: %dx%d (flux %d); audio: %s; sous-titres: %s" % (
-    raison,
-    video.get("width", 0), video["height"], video["index"],
-    ", ".join("flux %d %s" % (s["index"], (s.get("tags") or {}).get("language", "")) for s in audios) or "aucun",
-    "aucun (--no-subs)" if nosubs else "0:s? (si présents)")
 
 if dry:
-    print(resume)
+    try:
+        cmd, resume = preparer(sortie)
+    except RuntimeError as e:
+        sys.exit("rec.py: " + str(e))
+    print("mode ffmpeg (%s). %s" % (raison, resume))
     print(" ".join(cmd))
     sys.exit(0)
 
 log = open(sortie + ".log", "w")
-log.write(resume + "\n" + " ".join(cmd) + "\n")
-log.flush()
-os.dup2(log.fileno(), 2)        # stderr de ffmpeg -> SORTIE.log (tvstreamrecord ne le voit pas comme une erreur)
-os.execvp(cmd[0], cmd)          # on devient ffmpeg: terminate() de tvstreamrecord l'atteint directement
+
+
+def note(msg):
+    log.write("[%s] rec.py: %s\n" % (time.strftime("%H:%M:%S"), msg))
+    log.flush()
+
+
+arret = [False]
+proc = [None]
+
+
+def stop(*a):
+    arret[0] = True
+    p = proc[0]
+    if p and p.poll() is None:
+        p.terminate()
+
+
+signal.signal(signal.SIGTERM, stop)      # terminate() de tvstreamrecord
+signal.signal(signal.SIGINT, stop)
+
+
+def arreter(p):
+    if p.poll() is None:
+        p.terminate()
+        try:
+            p.wait(8)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+
+
+parties = []
+relances = 0
+rc = 1
+lecteur = open(sortie + ".log", "r")
+while not arret[0]:
+    fichier = sortie if not parties else "%s.part%d" % (sortie, len(parties))
+    try:
+        cmd, resume = preparer(fichier)
+    except RuntimeError as e:
+        if not parties:
+            sys.exit("rec.py: " + str(e))
+        note("analyse impossible (%s)" % e)
+        relances += 1
+        if relances > MAX_RELANCES or (duree and time.time() - T0 > duree - 5):
+            break
+        time.sleep(3)
+        continue
+    if not parties:
+        note("mode ffmpeg (%s). %s" % (raison, resume))
+    else:
+        note("relance %d: %s" % (relances, resume))
+    note(" ".join(cmd))
+    parties.append(fichier)
+    lecteur.seek(0, 2)
+    p = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=log)
+    proc[0] = p
+    debut = time.time()
+    taille, croissance = -1, debut
+    motif = None
+    while p.poll() is None and not arret[0]:
+        time.sleep(1)
+        now = time.time()
+        try:
+            t = os.path.getsize(fichier)
+        except OSError:
+            t = 0
+        if t != taille:
+            taille, croissance = t, now
+        new = re.search(r"New (video|audio|subtitle) stream", lecteur.read())
+        if new and sortie_ts:
+            if now - T0 <= FENETRE_NOUVEAU_FLUX:
+                motif = "flux %s apparu après le démarrage" % new.group(1)
+            else:
+                note("flux %s apparu après %d s: ignoré (fenêtre de %d s dépassée)"
+                     % (new.group(1), now - T0, FENETRE_NOUVEAU_FLUX))
+        if not motif and now - croissance > STALL and sortie_ts:
+            motif = "plus aucune donnée écrite depuis %d s" % (now - croissance)
+        if motif:
+            break
+    if motif and not arret[0]:
+        arreter(p)
+        relances += 1
+        note("%s -> %s" % (motif, "relance" if relances <= MAX_RELANCES else "abandon des relances"))
+        if relances > MAX_RELANCES:
+            break
+        continue
+    rc = p.wait() if not arret[0] else (arreter(p) or 0)
+    if arret[0] or not sortie_ts:
+        break
+    restant = (duree - (time.time() - T0)) if duree else 1e9
+    if rc == 0 and (not duree or restant < 10):
+        break
+    # ffmpeg s'est arrêté plus tôt que prévu (source coupée, fin de liste...)
+    relances += 1
+    if relances > MAX_RELANCES or restant < 10:
+        break
+    note("ffmpeg terminé (code %s) avec %s s restantes -> relance" % (rc, "?" if not duree else int(restant)))
+    time.sleep(2)
+
+if len(parties) > 1:
+    with open(sortie, "ab") as out:
+        for f in parties[1:]:
+            try:
+                with open(f, "rb") as src:
+                    while True:
+                        b = src.read(1 << 20)
+                        if not b:
+                            break
+                        out.write(b)
+                os.remove(f)
+            except OSError as e:
+                note("partie %s: %s" % (f, e))
+    note("%d parties concaténées" % len(parties))
+note("terminé")
+sys.exit(0 if os.path.exists(sortie) and os.path.getsize(sortie) else (rc or 1))
