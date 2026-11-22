@@ -25,8 +25,8 @@ Sous-titres: -map 0:s? (tous ceux qui existent, aucune erreur s'il n'y en a pas)
 Surveillance pendant les 3 premières minutes (REC_FENETRE, en secondes) : ffmpeg fige ses flux
 au démarrage et jette ceux qui apparaissent ensuite (ex. Pluto: nouveau flux vidéo après un
 changement de clip -> plus que le son). rec.py regarde donc ffmpeg ET le flux source (ffprobe
-toutes les 20 s, REC_SONDE) ; si le format change (flux apparu, PID, codec ou résolution
-différents), il arrête ffmpeg, SUPPRIME l'enregistrement commencé et relance depuis zéro avec
+toutes les 20 s, REC_SONDE) ; si le format change (flux apparu, PID ou codec différent),
+il arrête ffmpeg, SUPPRIME l'enregistrement commencé et relance depuis zéro avec
 le nouveau format (l'heure de fin reste celle prévue, 5 relances au plus). Si rien ne change
 pendant ces 3 minutes, ou après elles, l'enregistrement est conservé et plus rien n'est surveillé.
 tvstreamrecord arrête rec.py (SIGTERM) : ffmpeg est arrêté proprement. Journal: SORTIE.log.
@@ -112,10 +112,11 @@ def lire_flux():
 
 
 def signature(streams):
-    """Empreinte du format: type, codec, taille et identifiant (PID) de chaque flux."""
-    return sorted((str(s.get("codec_type")), str(s.get("codec_name")), s.get("width") or 0,
-                   s.get("height") or 0, str(s.get("id"))) for s in streams
-                  if s.get("codec_type") in ("video", "audio", "subtitle"))
+    """Empreinte du format: type, codec et identifiant (PID) des flux. La résolution n'en fait pas
+    partie: une variante qui manque un instant dans la réponse de ffprobe (erreur 502...) ne doit
+    pas déclencher une relance, et surtout pas vers une qualité plus basse."""
+    return sorted(set((str(s.get("codec_type")), str(s.get("codec_name")), str(s.get("id")))
+                      for s in streams if s.get("codec_type") in ("video", "audio", "subtitle")))
 
 
 def br(s):
