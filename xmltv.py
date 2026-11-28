@@ -20,6 +20,11 @@ from __future__ import unicode_literals
 
 from datetime import datetime, timedelta
 import re
+try:
+    from html import unescape as html_unescape
+except ImportError:  # Python 2 compatibility
+    from HTMLParser import HTMLParser
+    html_unescape = HTMLParser().unescape
 from time import sleep
 
 
@@ -70,7 +75,7 @@ def getAttr(stri, attr):
     p2 = stri.find('"', p1)
     if p1 >= len(attr) + 2 and p2>p1:
         ret = stri[p1:p2]
-    return ret
+    return html_unescape(ret)
 
 def getFirst(stri, attr):
     ret,pos = getOne(stri, attr)
@@ -84,7 +89,7 @@ def getOne(stri, attr, start=0):
         p1 = p1 + len(attr) + 1
         p2 = stri.find('>', p1) + 1
         p3 = stri.find('</'+attr, p2)
-        ret = stri[p2:p3].strip()
+        ret = html_unescape(stri[p2:p3].strip())
     return ret, p3+len(attr)+3
 
 def getAll(stri, attr):
@@ -105,8 +110,8 @@ def getList(stri, attr):
         p1 = p1 + len(attr) + 1
         p2 = stri.find('>', p1) + 1
         p3 = stri.find('</'+attr, p2)
-        att = stri[p1:p2-1].strip()
-        txt = stri[p2:p3].strip()
+        att = html_unescape(stri[p1:p2-1].strip())
+        txt = html_unescape(stri[p2:p3].strip())
         yield((att, txt))
         p1 = stri.find('<'+attr, p3)
 
