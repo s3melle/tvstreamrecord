@@ -1067,7 +1067,17 @@ def epglist_getter():
                     rating_score = float(rating_match.group(1).replace(',', '.'))
                 except ValueError:
                     pass
-        retlist.append([row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10], rating_score])
+        # Decode XMLTV entities at the API boundary as well. This also fixes
+        # guide entries already stored in SQLite before the XMLTV import fix.
+        retlist.append([
+            xmltv.html_unescape(row[0] or ""),
+            xmltv.html_unescape(row[1] or ""),
+            xmltv.html_unescape(row[2] or ""),
+            row[3], row[4], row[5], row[6], row[7], row[8],
+            xmltv.html_unescape(row[9] or ""),
+            xmltv.html_unescape(row[10] or ""),
+            rating_score
+        ])
 
     return json.dumps(
         {"aaData": retlist,
